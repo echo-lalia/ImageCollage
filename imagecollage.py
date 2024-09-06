@@ -20,12 +20,12 @@ parser = argparse.ArgumentParser(
     description='This tool can be used to create a high-quality collage by comparing given image tiles to a source image.'
 )
 parser.add_argument(
-    'source_image',
-    help="A path to an image to base the collage on."
-    )
-parser.add_argument(
     'tile_folder',
     help="A path to a folder of images to build the collage with."
+    )
+parser.add_argument(
+    'source_image',
+    help="A path to an image to base the collage on."
     )
 parser.add_argument(
     '-o', '--output',
@@ -82,10 +82,17 @@ args = parser.parse_args()
 
 
 # setup input vars
+if args.tiles is None and args.horizontal_tiles is None and args.vertical_tiles is None:
+    raise ValueError('"tiles", or "horizontal_tiles" and "vertical_tiles" params must be given.')
 if args.tiles is None and args.horizontal_tiles is None:
     raise ValueError('"tiles" or "horizontal_tiles" param must be given.')
 if args.tiles is None and args.vertical_tiles is None:
     raise ValueError('"tiles" or "vertical_tiles" param must be given.')
+
+if os.path.isdir(args.source_image):
+    raise ValueError('"source_image" is a directory.')
+if not os.path.isdir(args.tile_folder):
+    raise ValueError('"tile_folder" should point to a folder full of images.')
 
 horizontal_tiles = args.tiles if args.horizontal_tiles is None else args.horizontal_tiles
 vertical_tiles = args.tiles if args.vertical_tiles is None else args.vertical_tiles
@@ -139,7 +146,6 @@ prntclrs = {
 
 class Printer:
     max_line = ''
-    # load_chars = ['|', '/', '-', '\\']
     load_chars = ["⢿", "⣻", "⣽", "⣾", "⣷", "⣯", "⣟", "⡿"]
 
     char_idx = 0
