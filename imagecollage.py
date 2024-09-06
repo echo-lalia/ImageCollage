@@ -9,8 +9,9 @@ import os
 DEFAULT_SCALE = 1.0
 DEFAULT_COMPARE = 0.1
 DEFAULT_LINEAR_WEIGHT = 1.0
-DEFAULT_KERNEL_WEIGHT = 0.3
+DEFAULT_KERNEL_WEIGHT = 0.4
 DEFAULT_OVERLAY = 0.1
+DEFAULT_SUBTLE_OVERLAY = 0.4
 DEFAULT_REPEAT_PENALTY = 0.1
 
 
@@ -66,7 +67,12 @@ parser.add_argument(
 parser.add_argument(
     '-O', '--overlay_opacity', 
     default=DEFAULT_OVERLAY, type=float,
-    help=f'If given, overlay original image on the collage using the given opacity. (Default {DEFAULT_OVERLAY})'
+    help=f'If given, overlay original image on the collage using the given alpha. (Default {DEFAULT_OVERLAY})'
+    )
+parser.add_argument(
+    '-so', '--subtle_overlay',
+    default=DEFAULT_SUBTLE_OVERLAY, type=float,
+    help=f'The alpha for an alternate, less sharp method of overlaying the target image. (Default {DEFAULT_SUBTLE_OVERLAY})'
     )
 parser.add_argument(
     '-r', '--repeat_penalty',
@@ -105,6 +111,7 @@ linear_pixel_weight = args.linear_pixel_weight
 kernel_pixel_weight = args.kernel_pixel_weight
 
 overlay_weight = args.overlay_opacity
+subtle_overlay_weight = args.subtle_overlay
 repeat_penalty = args.repeat_penalty
 
 source_path = args.source_image
@@ -113,16 +120,27 @@ tile_directory = args.tile_folder
 output_path = args.output
 if output_path is None \
 or output_path.endswith(os.path.sep):
-    # assemble a filename
-    out_file = f'collage_{horizontal_tiles}x{vertical_tiles}_c{compare_scale}'
-    if linear_pixel_weight:
+    # assemble a filename, adding the relevant input params
+    out_file = f'collage_{horizontal_tiles}x{vertical_tiles}'
+
+    if compare_scale != DEFAULT_COMPARE:
+        out_file += f'_c{compare_scale}'
+
+    if linear_pixel_weight != DEFAULT_LINEAR_WEIGHT:
         out_file += f'_l{linear_pixel_weight}'
-    if kernel_pixel_weight:
+
+    if kernel_pixel_weight != DEFAULT_KERNEL_WEIGHT:
         out_file += f'_k{kernel_pixel_weight}'
-    if repeat_penalty:
+
+    if repeat_penalty != DEFAULT_REPEAT_PENALTY:
         out_file += f'_r{repeat_penalty}'
-    if overlay_weight:
-        out_file += f'_o{overlay_weight}'
+
+    if overlay_weight != DEFAULT_OVERLAY:
+        out_file += f'_O{overlay_weight}'
+
+    if subtle_overlay_weight != DEFAULT_SUBTLE_OVERLAY:
+        out_file += f'_so{subtle_overlay_weight}'
+
     out_file += '.jpg'
     if output_path is None:
         output_path = os.path.join(os.getcwd(), out_file)
@@ -157,13 +175,17 @@ class Printer:
 Printer = Printer()
 
 
+def _pad_text(text, padding):
+    return text + padding[len(text):]
+
+
 def cprint(text, color):
     text = str(text)
     if color.upper() in prntclrs:
         color = prntclrs[color.upper()]
     else:
         color = prntclrs['ENDC']
-    print(Printer.max_line, end='\r')
+    text = _pad_text(text, Printer.max_line)
     print(f"{color}{text}{prntclrs['ENDC']}")
 
 
@@ -173,7 +195,8 @@ def cwrite(text):
     text = f"{color}• {Printer.next_char()} - {text}{prntclrs['ENDC']}"
     if len(text) > len(Printer.max_line):
         Printer.max_line = ' ' * len(text)
-    print(Printer.max_line, end='\r')
+    else:
+        text = _pad_text(text, Printer.max_line)
     print(text, end='\r')
 
 
@@ -207,9 +230,10 @@ def setup():
     cprint(f'Source image size: {source_image.width}x{source_image.height}', 'HEADER')
     cprint(f'{num_image_tiles} input tiles, {tile_width}x{tile_height}px each', 'HEADER')
     cprint(f'{horizontal_tiles}x{vertical_tiles} tiles in output image, totaling {horizontal_tiles * vertical_tiles}.', 'HEADER')
-    cprint(f'Comparing at {compare_width}x{compare_height}px', 'HEADER')
     cprint(f'Final output size: {output_width}x{output_height}', 'HEADER')
-
+    cprint(f'Comparing at {compare_width}x{compare_height}px', 'HEADER')
+    cprint(f'linear_weight: {linear_pixel_weight}, kernel_weight: {kernel_pixel_weight}, repeat_penalty: {repeat_penalty}', 'HEADER')
+    cprint(f'Overlay alpha: {overlay_weight}, Subtle overlay alpha: {subtle_overlay_weight}', 'HEADER')
 
     cprint('Converting source image...', 'OKBLUE')
     # resize input image for easier comparison with tiles
@@ -363,6 +387,29 @@ def source_overlay(collage, source_image):
     return ImageChops.blend(collage, overlay_img, overlay_weight)
 
 
+def subtle_overlay(collage, source_image):
+    """Soften edges on source image, and blur the image withing each tile, before applying the overlay."""
+    source_image = source_image.convert(mode="RGB")
+    collage = collage.convert(mode="RGB")
+
+    # blur each tile segment of the source separately
+    for tile_x in range(horizontal_tiles):
+        for tile_y in range(vertical_tiles):
+
+            crop = (
+                tile_x * tile_width,
+                tile_y * tile_height,
+                tile_x * tile_width + tile_width,
+                tile_y * tile_height + tile_height,
+            )
+            overlay_region = source_image.crop(crop)
+            overlay_region = overlay_region.filter(ImageFilter.BoxBlur(30))
+            source_image.paste(overlay_region, crop)
+
+    source_image = ImageChops.overlay(collage, source_image)
+    return ImageChops.blend(collage, source_image, overlay_weight)
+
+
 # main
 def main():
     global source_image, tile_width, tile_height, compare_width, compare_height
@@ -438,11 +485,6 @@ def main():
                     * kernel_pixel_weight
                 )
 
-
-            # final_errors = (linear_errors * linear_pixel_weight) \
-            #              + (kernel_errors * kernel_pixel_weight) \
-            #              + repeat_penalties
-
             # get the first index where error was equal to the smallest error
             # select the tile at that index
             best_idx, *_ = np.where(final_errors == final_errors.min())[0]
@@ -459,6 +501,10 @@ def main():
     if overlay_weight:
         cprint('Applying overlay...', 'OKBLUE')
         collage = source_overlay(collage, source_image)
+
+    if subtle_overlay_weight:
+        cprint('Applying subtle overlay...', 'OKBLUE')
+        collage = subtle_overlay(collage, source_image)
 
     if show:
         cprint('Showing img...', "OKBLUE")
