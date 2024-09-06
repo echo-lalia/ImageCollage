@@ -47,37 +47,37 @@ parser.add_argument(
 parser.add_argument(
     '-s', '--scale', 
     default=DEFAULT_SCALE, type=float,
-    help='A float controlling the amount to rescale the input image. (Default 1.0)'
+    help=f'A float controlling the amount to rescale the input image. (Default {DEFAULT_SCALE})'
     )
 parser.add_argument(
     '-c', '--compare_scale', 
     default=DEFAULT_COMPARE, type=float,
-    help='The resolution scale that tiles will be compared at. (Default 0.1)'
+    help=f'The resolution scale that tiles will be compared at. (Default {DEFAULT_COMPARE})'
     )
 parser.add_argument(
     '-l', '--linear_pixel_weight', 
     default=DEFAULT_LINEAR_WEIGHT, type=float,
-    help='How much the "linear" difference between pixels affects the output. (Defaults 1.0)'
+    help=f'How much the "linear" difference between pixels affects the output. (Default {DEFAULT_LINEAR_WEIGHT})'
     )
 parser.add_argument(
     '-k', '--kernel_pixel_weight', 
     default=DEFAULT_KERNEL_WEIGHT, type=float,
-    help='How much the "kernel difference" comparison affects the output. (Defaults 0.3)'
+    help=f'How much the "kernel difference" comparison affects the output. (Default {DEFAULT_KERNEL_WEIGHT})'
     )
 parser.add_argument(
     '-e', '--entropy_weight', 
     default=DEFAULT_ENTROPY_WEIGHT, type=float,
-    help='How much the "entropy" between tiles affects the output. (Defaults 0.0)'
+    help=f'How much the "entropy" between tiles affects the output. (Default {DEFAULT_ENTROPY_WEIGHT})'
     )
 parser.add_argument(
     '-O', '--overlay_opacity', 
     default=DEFAULT_OVERLAY, type=float,
-    help='If given, overlay original image on the collage using the given opacity. (Defaults 0.1)'
+    help=f'If given, overlay original image on the collage using the given opacity. (Default {DEFAULT_OVERLAY})'
     )
 parser.add_argument(
     '-r', '--repeat_penalty',
     default=DEFAULT_REPEAT_PENALTY, type=float,
-    help='How much to penalize repetition when selecting tiles. (Default 0.1)'
+    help=f'How much to penalize repetition when selecting tiles. (Default {DEFAULT_REPEAT_PENALTY})'
     )
 parser.add_argument(
     '-p', '--preview',
