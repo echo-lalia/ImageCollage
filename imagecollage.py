@@ -1,5 +1,5 @@
 
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageFilter
 import numpy as np
 import argparse
 import random
@@ -8,12 +8,10 @@ import os
 
 DEFAULT_SCALE = 1.0
 DEFAULT_COMPARE = 0.1
-DEFAULT_LINEAR_WEIGHT = 1.0
-DEFAULT_EDGE_WEIGHT = 100.0
-DEFAULT_KERNEL_WEIGHT = 0.3
-DEFAULT_ENTROPY_WEIGHT = 0.0
-DEFAULT_OVERLAY = 0.1
-DEFAULT_REPEAT_PENALTY = 0.1
+DEFAULT_LINEAR_WEIGHT = 0.0
+DEFAULT_KERNEL_WEIGHT = 1.0
+DEFAULT_OVERLAY = 0.0
+DEFAULT_REPEAT_PENALTY = 0.0
 
 
 
@@ -66,16 +64,6 @@ parser.add_argument(
     help=f'How much the "kernel difference" comparison affects the output. (Default {DEFAULT_KERNEL_WEIGHT})'
     )
 parser.add_argument(
-    '-e', '--edge_detection_weight', 
-    default=DEFAULT_KERNEL_WEIGHT, type=float,
-    help=f'How much the presence of edges affects the output. (Default {DEFAULT_EDGE_WEIGHT})'
-    )
-parser.add_argument(
-    '-E', '--entropy_weight', 
-    default=DEFAULT_ENTROPY_WEIGHT, type=float,
-    help=f'How much the "entropy" between tiles affects the output. (Default {DEFAULT_ENTROPY_WEIGHT})'
-    )
-parser.add_argument(
     '-O', '--overlay_opacity', 
     default=DEFAULT_OVERLAY, type=float,
     help=f'If given, overlay original image on the collage using the given opacity. (Default {DEFAULT_OVERLAY})'
@@ -107,9 +95,7 @@ rescale_by = args.scale
 compare_scale = args.compare_scale
 
 linear_pixel_weight = args.linear_pixel_weight
-edge_detection_weight = args.edge_detection_weight
 kernel_pixel_weight = args.kernel_pixel_weight
-entropy_weight = args.entropy_weight
 
 overlay_weight = args.overlay_opacity
 repeat_penalty = args.repeat_penalty
@@ -126,8 +112,6 @@ or output_path.endswith(os.path.sep):
         out_file += f'_l{linear_pixel_weight}'
     if kernel_pixel_weight:
         out_file += f'_k{kernel_pixel_weight}'
-    if entropy_weight:
-        out_file += f'_e{entropy_weight}'
     if repeat_penalty:
         out_file += f'_r{repeat_penalty}'
     if overlay_weight:
@@ -283,6 +267,19 @@ def tile_error(source, tile) -> float:
     return np.mean(np.abs(source - tile)) / 255
 
 
+def find_tile_errors(source_region:Image.Image, tile_arrays:list, array_function:callable) -> np.array:
+    """
+    Convert source region using given array function, 
+    and compare to tile arrays to find the error for each.
+    array_function defaults to `tile_to_array`
+    """
+    
+    source_arr = array_function(source_region)
+    
+    return np.array([tile_error(source_arr, tile_arr) for tile_arr in tile_arrays])
+
+
+
 def find_linear_best_tile(source_region:Image.Image, tiles:list, tile_arrays:list) -> Image.Image:
     """Compare pixels in each tile to find closest match"""
     # generate array to represent source region
@@ -304,6 +301,17 @@ def find_kernel_best_tile(source_region:Image.Image, tiles:list, kernel_diff_arr
 
 def tile_to_array(img):
     img = img.resize((compare_width, compare_height))
+    arr = np.array(
+        [img.getpixel((x,y)) for y in range(img.height) for x in range(img.width)]
+        )
+    return arr
+
+
+def tile_to_edge_array(img):
+    # This is bad for speed reasons, but for quality, doing edge detection first is better.
+    
+    img = img.resize((compare_width, compare_height))
+    img = img.filter(ImageFilter.FIND_EDGES)
     arr = np.array(
         [img.getpixel((x,y)) for y in range(img.height) for x in range(img.width)]
         )
@@ -370,18 +378,11 @@ def main():
     
     # pre-generate reusable np arrays to represent the tiles
     cprint("Generating arrays from tiles...", "OKBLUE")
-    # tile_arrays = arrays_from_tiles(tiles)
     tile_arrays = [tile_to_array(tile) for tile in tiles]
 
     # generate kernel diff arrays for each image
     cprint("Generating kernel diff arrays...", "OKBLUE")
     kernel_diff_arrays = [tile_kernel_diff_array(tile) for tile in tiles]
-
-    # generate arrays representing the edges in each image
-    # edge_arrays = [get_edge_array(tile) for tile in tiles]
-
-    # generate entropies for each image
-    entropies = [tile.entropy() for tile in tiles]
 
     repeat_penalties = np.array([0.0] * len(tiles))
     
@@ -412,19 +413,13 @@ def main():
             source_region = source_image.crop(crop)
 
             # scan and find best matching tile image
-            linear_errors = find_linear_best_tile(source_region, tiles, tile_arrays)
-            kernel_errors = find_kernel_best_tile(source_region, tiles, kernel_diff_arrays)
-
-            # compare entropy of source to tiles
-            source_entropy = source_region.entropy()
-            entropy_errors = np.array([abs(source_entropy - entropy) for entropy in entropies])
-            # scale by max entropy to make value more predictable
-            if max(np.abs(entropies)) != 0:
-                entropy_errors /= max(np.abs(entropies))
+            #linear_errors = find_linear_best_tile(source_region, tiles, tile_arrays)
+            #kernel_errors = find_kernel_best_tile(source_region, tiles, kernel_diff_arrays)
+            linear_errors = find_tile_errors(source_region, tile_arrays, tile_to_array)
+            kernel_errors = find_tile_errors(source_region, kernel_diff_arrays, tile_kernel_diff_array)
 
             final_errors = (linear_errors * linear_pixel_weight) \
                          + (kernel_errors * kernel_pixel_weight) \
-                         + (entropy_errors * entropy_weight) \
                          + repeat_penalties
 
             # get the first index where error was equal to the smallest error
