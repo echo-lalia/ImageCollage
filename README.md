@@ -1,0 +1,2 @@
+# ImageCollage
+A script that uses Pillow + Numpy to compare and assemble an image collage based on a given target image and source tiles.
