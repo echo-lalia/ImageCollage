@@ -8,10 +8,10 @@ import os
 
 DEFAULT_SCALE = 1.0
 DEFAULT_COMPARE = 0.1
-DEFAULT_LINEAR_WEIGHT = 0.0
-DEFAULT_KERNEL_WEIGHT = 1.0
-DEFAULT_OVERLAY = 0.0
-DEFAULT_REPEAT_PENALTY = 0.0
+DEFAULT_LINEAR_WEIGHT = 1.0
+DEFAULT_KERNEL_WEIGHT = 0.3
+DEFAULT_OVERLAY = 0.1
+DEFAULT_REPEAT_PENALTY = 0.1
 
 
 
@@ -377,12 +377,14 @@ def main():
     cprint(f"{num_image_tiles - bad_tile_files} tiles loaded.", "OKGREEN")
     
     # pre-generate reusable np arrays to represent the tiles
-    cprint("Generating arrays from tiles...", "OKBLUE")
-    tile_arrays = [tile_to_array(tile) for tile in tiles]
+    if linear_pixel_weight:
+        cprint("Generating arrays from tiles...", "OKBLUE")
+        tile_arrays = [tile_to_array(tile) for tile in tiles]
 
     # generate kernel diff arrays for each image
-    cprint("Generating kernel diff arrays...", "OKBLUE")
-    kernel_diff_arrays = [tile_kernel_diff_array(tile) for tile in tiles]
+    if kernel_pixel_weight:
+        cprint("Generating kernel diff arrays...", "OKBLUE")
+        kernel_diff_arrays = [tile_kernel_diff_array(tile) for tile in tiles]
 
     repeat_penalties = np.array([0.0] * len(tiles))
     
@@ -413,16 +415,30 @@ def main():
             source_region = source_image.crop(crop)
 
             # scan and find best matching tile image
-            #linear_errors = find_linear_best_tile(source_region, tiles, tile_arrays)
-            #kernel_errors = find_kernel_best_tile(source_region, tiles, kernel_diff_arrays)
-            linear_errors = find_tile_errors(source_region, tile_arrays, tile_to_array)
-            kernel_errors = find_tile_errors(source_region, kernel_diff_arrays, tile_kernel_diff_array)
 
-            final_errors = (linear_errors * linear_pixel_weight) \
-                         + (kernel_errors * kernel_pixel_weight) \
-                         + repeat_penalties
+            final_errors = repeat_penalties
+
+            if linear_pixel_weight:
+                final_errors = (
+                    final_errors
+                    + find_tile_errors(source_region, tile_arrays, tile_to_array)
+                    * linear_pixel_weight
+                )
+
+            if kernel_pixel_weight:
+                final_errors = (
+                    final_errors
+                    + find_tile_errors(source_region, kernel_diff_arrays, tile_kernel_diff_array)
+                    * kernel_pixel_weight
+                )
+
+
+            # final_errors = (linear_errors * linear_pixel_weight) \
+            #              + (kernel_errors * kernel_pixel_weight) \
+            #              + repeat_penalties
 
             # get the first index where error was equal to the smallest error
+            # select the tile at that index
             best_idx, *_ = np.where(final_errors == final_errors.min())[0]
             best_tile = tiles[best_idx]
 
@@ -431,6 +447,7 @@ def main():
             
             # add the best tile to the output collage
             collage.paste(best_tile, crop)
+
     cprint(f"{total_tiles} tiles selected.", "OKGREEN")
 
     if overlay_weight:
