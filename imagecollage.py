@@ -163,12 +163,14 @@ prntclrs = {
 }
 
 class Printer:
+    """Simple helper for printing progress text."""
     max_line = ''
     load_chars = ["⢿", "⣻", "⣽", "⣾", "⣷", "⣯", "⣟", "⡿"]
 
     char_idx = 0
 
     def next_char(self):
+        """Get the next loading character"""
         self.char_idx = (self.char_idx + 1) % len(self.load_chars)
         return self.load_chars[self.char_idx]
 
@@ -180,6 +182,7 @@ def _pad_text(text, padding):
 
 
 def cprint(text, color):
+    """Print in color (and pad lines to erase old text)"""
     text = str(text)
     if color.upper() in prntclrs:
         color = prntclrs[color.upper()]
@@ -190,6 +193,7 @@ def cprint(text, color):
 
 
 def cwrite(text):
+    """Write to the terminal without starting a new line, erasing old text."""
     text = str(text)
     color = prntclrs['OKCYAN']
     text = f"{color}• {Printer.next_char()} - {text}{prntclrs['ENDC']}"
@@ -282,15 +286,6 @@ def load_image_tile(img_file):
     return img.convert(mode='LAB')
 
 
-def arrays_from_tiles(tiles):
-    """Generate np arrays representing the given tiles"""
-    cprint("Generating arrays from tiles...", "OKBLUE")
-    tile_arrays = []
-    for tile in tiles:
-        tile_arrays.append(tile_to_array(tile))
-    return tile_arrays
-
-
 def tile_error(source, tile) -> float:
     """Compare pixels in one tile, returning the error score"""
 
@@ -309,39 +304,8 @@ def find_tile_errors(source_region:Image.Image, tile_arrays:list, array_function
     return np.array([tile_error(source_arr, tile_arr) for tile_arr in tile_arrays])
 
 
-
-def find_linear_best_tile(source_region:Image.Image, tiles:list, tile_arrays:list) -> Image.Image:
-    """Compare pixels in each tile to find closest match"""
-    # generate array to represent source region
-    source_arr = tile_to_array(source_region)
-
-    errors = np.array([tile_error(source_arr, tile_arr) for tile_arr in tile_arrays])
-    return errors
-
-
-def find_kernel_best_tile(source_region:Image.Image, tiles:list, kernel_diff_arrays:list) -> Image.Image:
-    """Compare pixels in each tile to find closest match"""
-    # generate array to represent source region
-    source_arr = tile_kernel_diff_array(source_region)
-
-    errors = np.array([tile_error(source_arr, tile_arr) for tile_arr in kernel_diff_arrays])
-    return errors
-
-
-
 def tile_to_array(img):
     img = img.resize((compare_width, compare_height))
-    arr = np.array(
-        [img.getpixel((x,y)) for y in range(img.height) for x in range(img.width)]
-        )
-    return arr
-
-
-def tile_to_edge_array(img):
-    # This is bad for speed reasons, but for quality, doing edge detection first is better.
-    
-    img = img.resize((compare_width, compare_height))
-    img = img.filter(ImageFilter.FIND_EDGES)
     arr = np.array(
         [img.getpixel((x,y)) for y in range(img.height) for x in range(img.width)]
         )
@@ -371,15 +335,6 @@ def tile_kernel_diff_array(img):
             # compare to real val
             arr = np.append(arr, abs(img.getpixel((x,y))[0] - avg_val))
     return arr / 255
-
-
-def kernel_diff_from_tiles(tiles):
-    """Generate np arrays representing the local entropy of each pixel"""
-    cprint("Generating kernel diff arrays...", "OKBLUE")
-    tile_arrays = []
-    for tile in tiles:
-        tile_arrays.append(tile_kernel_diff_array(tile))
-    return tile_arrays
 
 
 def source_overlay(collage, source_image):
@@ -515,10 +470,6 @@ def main():
     collage.save(output_path)
     cprint(f'Saved as "{output_path}"', 'OKGREEN')
     cprint("Done!", 'OKGREEN')
-
-
-    
-
 
 
 
