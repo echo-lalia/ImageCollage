@@ -9,6 +9,7 @@ import os
 DEFAULT_SCALE = 1.0
 DEFAULT_COMPARE = 0.1
 DEFAULT_LINEAR_WEIGHT = 1.0
+DEFAULT_EDGE_WEIGHT = 100.0
 DEFAULT_KERNEL_WEIGHT = 0.3
 DEFAULT_ENTROPY_WEIGHT = 0.0
 DEFAULT_OVERLAY = 0.1
@@ -65,7 +66,12 @@ parser.add_argument(
     help=f'How much the "kernel difference" comparison affects the output. (Default {DEFAULT_KERNEL_WEIGHT})'
     )
 parser.add_argument(
-    '-e', '--entropy_weight', 
+    '-e', '--edge_detection_weight', 
+    default=DEFAULT_KERNEL_WEIGHT, type=float,
+    help=f'How much the presence of edges affects the output. (Default {DEFAULT_EDGE_WEIGHT})'
+    )
+parser.add_argument(
+    '-E', '--entropy_weight', 
     default=DEFAULT_ENTROPY_WEIGHT, type=float,
     help=f'How much the "entropy" between tiles affects the output. (Default {DEFAULT_ENTROPY_WEIGHT})'
     )
@@ -101,6 +107,7 @@ rescale_by = args.scale
 compare_scale = args.compare_scale
 
 linear_pixel_weight = args.linear_pixel_weight
+edge_detection_weight = args.edge_detection_weight
 kernel_pixel_weight = args.kernel_pixel_weight
 entropy_weight = args.entropy_weight
 
@@ -362,10 +369,16 @@ def main():
     cprint(f"{num_image_tiles - bad_tile_files} tiles loaded.", "OKGREEN")
     
     # pre-generate reusable np arrays to represent the tiles
-    tile_arrays = arrays_from_tiles(tiles)
+    cprint("Generating arrays from tiles...", "OKBLUE")
+    # tile_arrays = arrays_from_tiles(tiles)
+    tile_arrays = [tile_to_array(tile) for tile in tiles]
 
-    # generate entropy arrays for each image
-    kernel_diff_arrays = kernel_diff_from_tiles(tiles)
+    # generate kernel diff arrays for each image
+    cprint("Generating kernel diff arrays...", "OKBLUE")
+    kernel_diff_arrays = [tile_kernel_diff_array(tile) for tile in tiles]
+
+    # generate arrays representing the edges in each image
+    # edge_arrays = [get_edge_array(tile) for tile in tiles]
 
     # generate entropies for each image
     entropies = [tile.entropy() for tile in tiles]
