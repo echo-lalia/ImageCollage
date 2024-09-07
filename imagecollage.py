@@ -16,138 +16,161 @@ DEFAULT_REPEAT_PENALTY = 0.1
 
 
 
-parser = argparse.ArgumentParser(
-    prog='ImageCollage',
-    description='This tool can be used to create a high-quality collage by comparing given image tiles to a source image.'
-)
-parser.add_argument(
-    'tile_folder',
-    help="A path to a folder of images to build the collage with."
+def setup_args():
+    global show, output_path, subtle_overlay_weight, overlay_weight, repeat_penalty, \
+        kernel_pixel_weight, linear_pixel_weight, compare_scale, tile_directory, \
+        source_path, repeat_penalty, rescale_by, horizontal_tiles, vertical_tiles, \
+        args, source_image, tile_width, tile_height, compare_width, compare_height
+
+
+    parser = argparse.ArgumentParser(
+        prog='ImageCollage',
+        description='This tool can be used to create a high-quality collage by comparing given image tiles to a source image.'
     )
-parser.add_argument(
-    'source_image',
-    help="A path to an image to base the collage on."
-    )
-parser.add_argument(
-    '-o', '--output',
-    help='The path (and/or filename) to use. Default is a generated filename in the current directory.'
-    )
-parser.add_argument(
-    '-t', '--tiles', type=int,
-    help='The number of tiles (horizontal and vertical) to use.'
-    )
-parser.add_argument(
-    '-z', '--horizontal_tiles', type=int,
-    help='The number of horizontal tiles to use.'
-    )
-parser.add_argument(
-    '-v', '--vertical_tiles', type=int,
-    help='The number of vertical tiles to use.'
-    )
-parser.add_argument(
-    '-s', '--scale', 
-    default=DEFAULT_SCALE, type=float,
-    help=f'A float controlling the amount to rescale the input image. (Default {DEFAULT_SCALE})'
-    )
-parser.add_argument(
-    '-c', '--compare_scale', 
-    default=DEFAULT_COMPARE, type=float,
-    help=f'The resolution scale that tiles will be compared at. (Default {DEFAULT_COMPARE})'
-    )
-parser.add_argument(
-    '-l', '--linear_pixel_weight', 
-    default=DEFAULT_LINEAR_WEIGHT, type=float,
-    help=f'How much the "linear" difference between pixels affects the output. (Default {DEFAULT_LINEAR_WEIGHT})'
-    )
-parser.add_argument(
-    '-k', '--kernel_pixel_weight', 
-    default=DEFAULT_KERNEL_WEIGHT, type=float,
-    help=f'How much the "kernel difference" comparison affects the output. (Default {DEFAULT_KERNEL_WEIGHT})'
-    )
-parser.add_argument(
-    '-O', '--overlay_opacity', 
-    default=DEFAULT_OVERLAY, type=float,
-    help=f'If given, overlay original image on the collage using the given alpha. (Default {DEFAULT_OVERLAY})'
-    )
-parser.add_argument(
-    '-so', '--subtle_overlay',
-    default=DEFAULT_SUBTLE_OVERLAY, type=float,
-    help=f'The alpha for an alternate, less sharp method of overlaying the target image. (Default {DEFAULT_SUBTLE_OVERLAY})'
-    )
-parser.add_argument(
-    '-r', '--repeat_penalty',
-    default=DEFAULT_REPEAT_PENALTY, type=float,
-    help=f'How much to penalize repetition when selecting tiles. (Default {DEFAULT_REPEAT_PENALTY})'
-    )
-parser.add_argument(
-    '-p', '--preview',
-    action='store_true',
-    help='If given, opens a preview of the output image upon completion.'
-    )
-args = parser.parse_args()
+    # I'm just using this pattern to shrink the arg creation code
+    for args, help, kwargs in [
+        (('tile_folder',), 
+            ("A path to a folder of images to build the mosaic with"), 
+            {},
+        ),
+        (('source_image',), 
+            ("A path to an image to base the mosaic on."), 
+            {},
+        ),
+        (('tiles',), 
+            ('The number of tiles (horizontal and/or vertical) to use.'), 
+            {},
+        ),
+        (('-o','--output'), 
+            ('The path (and/or filename) to use. Default is a generated filename in the current directory.'), 
+            {},
+        ),
+        (('-s','--scale'), 
+            (f'A float controlling the amount to rescale the input image. (Default {DEFAULT_SCALE})'), 
+            {'default':str(DEFAULT_SCALE)},
+        ),
+        (('-c','--compare_scale'), 
+            (f'The resolution scale that tiles will be compared at. (Default {DEFAULT_COMPARE})'), 
+            {'default':str(DEFAULT_COMPARE)},
+        ),
+        (('-l','--linear_pixel_weight'), 
+            (f'How much the "linear" difference between pixels affects the output. (Default {DEFAULT_LINEAR_WEIGHT})'), 
+            {'type':float, 'default':DEFAULT_LINEAR_WEIGHT},
+        ),
+        (('-k','--kernel_pixel_weight'), 
+            (f'How much the "kernel difference" comparison affects the output. (Default {DEFAULT_KERNEL_WEIGHT})'), 
+            {'type':float, 'default':DEFAULT_KERNEL_WEIGHT},
+        ),
+        (('-O','--overlay_opacity'), 
+            (f'If given, overlay original image on the collage using the given alpha. (Default {DEFAULT_OVERLAY})'), 
+            {'type':float, 'default':DEFAULT_OVERLAY},
+        ),
+        (('-so','--subtle_overlay'), 
+            (f'The alpha for an alternate, less sharp method of overlaying the target image. (Default {DEFAULT_SUBTLE_OVERLAY})'), 
+            {'type':float, 'default':DEFAULT_SUBTLE_OVERLAY},
+        ),
+        (('-r','--repeat_penalty'), 
+            (f'How much to penalize repetition when selecting tiles. (Default {DEFAULT_REPEAT_PENALTY})'), 
+            {'type':float, 'default':DEFAULT_REPEAT_PENALTY},
+        ),
+        (('-p','--preview'), 
+            ('If given, opens a preview of the output image upon completion.'), 
+            {'action':'store_true'},
+        ),
+    ]:
+        print(args, help, kwargs)
+        parser.add_argument(*args, help=help, **kwargs)
+    args = parser.parse_args()
 
 
-# setup input vars
-if args.tiles is None and args.horizontal_tiles is None and args.vertical_tiles is None:
-    raise ValueError('"tiles", or "horizontal_tiles" and "vertical_tiles" params must be given.')
-if args.tiles is None and args.horizontal_tiles is None:
-    raise ValueError('"tiles" or "horizontal_tiles" param must be given.')
-if args.tiles is None and args.vertical_tiles is None:
-    raise ValueError('"tiles" or "vertical_tiles" param must be given.')
-
-if os.path.isdir(args.source_image):
-    raise ValueError('"source_image" is a directory.')
-if not os.path.isdir(args.tile_folder):
-    raise ValueError('"tile_folder" should point to a folder full of images.')
-
-horizontal_tiles = args.tiles if args.horizontal_tiles is None else args.horizontal_tiles
-vertical_tiles = args.tiles if args.vertical_tiles is None else args.vertical_tiles
-
-# how much to scale input image by BEFORE processing
-rescale_by = args.scale
-compare_scale = args.compare_scale
-
-linear_pixel_weight = args.linear_pixel_weight
-kernel_pixel_weight = args.kernel_pixel_weight
-
-overlay_weight = args.overlay_opacity
-subtle_overlay_weight = args.subtle_overlay
-repeat_penalty = args.repeat_penalty
-
-source_path = args.source_image
-tile_directory = args.tile_folder
-
-output_path = args.output
-if output_path is None \
-or output_path.endswith(os.path.sep):
-    # assemble a filename, adding the relevant input params
-    out_file = f'collage_{horizontal_tiles}x{vertical_tiles}'
-
-    if compare_scale != DEFAULT_COMPARE:
-        out_file += f'_c{compare_scale}'
-
-    if linear_pixel_weight != DEFAULT_LINEAR_WEIGHT:
-        out_file += f'_l{linear_pixel_weight}'
-
-    if kernel_pixel_weight != DEFAULT_KERNEL_WEIGHT:
-        out_file += f'_k{kernel_pixel_weight}'
-
-    if repeat_penalty != DEFAULT_REPEAT_PENALTY:
-        out_file += f'_r{repeat_penalty}'
-
-    if overlay_weight != DEFAULT_OVERLAY:
-        out_file += f'_O{overlay_weight}'
-
-    if subtle_overlay_weight != DEFAULT_SUBTLE_OVERLAY:
-        out_file += f'_so{subtle_overlay_weight}'
-
-    out_file += '.jpg'
-    if output_path is None:
-        output_path = os.path.join(os.getcwd(), out_file)
+    # parse tiles
+    if 'x' in args.tiles.lower():
+        ht, vt = args.tiles.lower().split('x')
+        horizontal_tiles = int(ht)
+        vertical_tiles = int(vt)
     else:
-        output_path = os.path.join(output_path, out_file)
+        horizontal_tiles = vertical_tiles = int(args.tiles)
 
-show = args.preview
+
+    # friendly errors for wrong directories
+    if os.path.isdir(args.source_image):
+        raise ValueError('"source_image" is a directory.')
+    if not os.path.isdir(args.tile_folder):
+        raise ValueError('"tile_folder" should point to a folder full of images.')
+
+
+    # parse image scale
+    rescale_by = args.scale
+    source_path = args.source_image
+    source_image = Image.open(source_path)
+    if "x" in rescale_by.lower():
+        # width * height integers
+        w, h = rescale_by.lower().split('x')
+        source_image = source_image.resize((int(w), int(h)))
+    else:
+        # a single float
+        rescale_by = float(rescale_by)
+        if rescale_by != 1.0:
+            source_image = source_image.resize((
+                int(source_image.width * rescale_by),
+                int(source_image.height * rescale_by),
+            ))
+    cprint('Successfully read source image', 'OKBLUE')
+
+
+    # parse compare scale (and tile size)
+    compare_scale = args.compare_scale
+    tile_width = source_image.width // horizontal_tiles
+    tile_height = source_image.height // vertical_tiles
+    if 'x' in compare_scale.lower():
+        # width * height integers
+        w, h = compare_scale.lower().split('x')
+        compare_width = int(w)
+        compare_height = int(h)
+    else:
+        # a single float
+        compare_scale = float(compare_scale)
+        compare_width = int(tile_width * compare_scale)
+        compare_height = int(tile_height * compare_scale)
+
+    # setup error weights
+    linear_pixel_weight = args.linear_pixel_weight
+    kernel_pixel_weight = args.kernel_pixel_weight
+
+    # other image weights
+    overlay_weight = args.overlay_opacity
+    subtle_overlay_weight = args.subtle_overlay
+    repeat_penalty = args.repeat_penalty
+
+    # setup input/output paths
+    tile_directory = args.tile_folder
+    output_path = args.output
+
+    # create generated output filename
+    if output_path is None \
+    or output_path.endswith(os.path.sep):
+
+        out_file = f'mosaic_{horizontal_tiles}x{vertical_tiles}'
+
+        # add each non-default param to the filename
+        for real_var, default_var, var_sym in [
+            (compare_scale, DEFAULT_COMPARE, 'c'),
+            (linear_pixel_weight, DEFAULT_LINEAR_WEIGHT, 'l'),
+            (kernel_pixel_weight, DEFAULT_KERNEL_WEIGHT, 'k'),
+            (repeat_penalty, DEFAULT_REPEAT_PENALTY, 'c'),
+            (overlay_weight, DEFAULT_OVERLAY, 'O'),
+            (subtle_overlay_weight, DEFAULT_SUBTLE_OVERLAY, 'so'),
+        ]:
+            if real_var != default_var:
+                out_file += f"_{var_sym}{real_var}"
+
+        out_file += '.jpg'
+        if output_path is None:
+            output_path = os.path.join(os.getcwd(), out_file)
+        else:
+            output_path = os.path.join(output_path, out_file)
+
+    show = args.preview
 
 
 prntclrs = {
@@ -173,7 +196,6 @@ class Printer:
         """Get the next loading character"""
         self.char_idx = (self.char_idx + 1) % len(self.load_chars)
         return self.load_chars[self.char_idx]
-
 Printer = Printer()
 
 
@@ -209,20 +231,6 @@ def setup():
     global source_image, tile_width, tile_height, compare_width, compare_height
     global output_width, output_height, num_image_tiles
 
-    # read input image and calculate values for the script
-    source_image = Image.open(source_path)
-    source_image = source_image.resize((
-        int(source_image.width * rescale_by),
-        int(source_image.height * rescale_by),
-    ))
-
-    cprint('Successfully read source image', 'OKBLUE')
-
-
-    tile_width = source_image.width // horizontal_tiles
-    tile_height = source_image.height // vertical_tiles
-    compare_width = int(tile_width * compare_scale)
-    compare_height = int(tile_height * compare_scale)
 
 
     # calculate real output size (for equally sized tiles)
@@ -350,6 +358,8 @@ def subtle_overlay(collage, source_image):
     source_image = source_image.convert(mode="RGB")
     collage = collage.convert(mode="RGB")
 
+    blur_amount = min(tile_width, tile_height) // 2
+
     # blur each tile segment of the source separately
     for tile_x in range(horizontal_tiles):
         for tile_y in range(vertical_tiles):
@@ -361,7 +371,7 @@ def subtle_overlay(collage, source_image):
                 tile_y * tile_height + tile_height,
             )
             overlay_region = source_image.crop(crop)
-            overlay_region = overlay_region.filter(ImageFilter.BoxBlur(30))
+            overlay_region = overlay_region.filter(ImageFilter.BoxBlur(blur_amount))
             source_image.paste(overlay_region, crop)
 
     source_image = ImageChops.overlay(collage, source_image)
@@ -478,5 +488,6 @@ def main():
 
 
 if __name__ == "__main__":
+    setup_args()
     setup()
     main()
