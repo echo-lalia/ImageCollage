@@ -283,8 +283,11 @@ def load_image_tile(img_file):
     # crop and resize image to tile size
     img = img.resize((tile_width, tile_height), box=crop)
     # convert to Lab color space for more accurate comparisons
-    return img.convert(mode='LAB')
-
+    try:
+        return img.convert(mode='LAB')
+    except:
+        # Sometimes the conversion fails due to the color mode the image loads with.
+        return img.convert(mode='RGB').convert(mode="LAB")
 
 def tile_error(source, tile) -> float:
     """Compare pixels in one tile, returning the error score"""
@@ -362,7 +365,7 @@ def subtle_overlay(collage, source_image):
             source_image.paste(overlay_region, crop)
 
     source_image = ImageChops.overlay(collage, source_image)
-    return ImageChops.blend(collage, source_image, overlay_weight)
+    return ImageChops.blend(collage, source_image, subtle_overlay_weight)
 
 
 # main
