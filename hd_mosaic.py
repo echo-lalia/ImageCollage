@@ -17,6 +17,7 @@ DEFAULT_REPEAT_PENALTY = 0.1
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ARG SETUP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # -----------------------------------------------------------------------------------------------------------------------------
+
 def setup_args():
     global \
         show_preview, output_path, subtle_overlay_weight, overlay_weight, repeat_penalty, \
@@ -27,62 +28,88 @@ def setup_args():
 
 
     parser = argparse.ArgumentParser(
-        prog='HD_Mosaic',
-        description='This tool can be used to create a high-quality image mosaic by comparing given image tiles to a source image.'
+        prog='hd_mosaic.py',
+        description=ctext('This tool can be used to create a high-quality image mosaic by comparing given image tiles to a source image.', 'OKCYAN'),
+        epilog=f"{ctext('Example:', 'HEADER')} {ctext('python3 hd_mosaic.py ../imagetiles ../targetimg.jpg 16x8', 'OKBLUE')}",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        add_help=False,
     )
+    positional_group = parser.add_argument_group(title=ctext('positional', "HEADER"), description=ctext('These arguments are required.', 'OKCYAN'))
+    scale_group = parser.add_argument_group(title=ctext('scale options', "HEADER"), description=ctext('These options take a float (which is multiplied by the original scale), or two integers separated by an "x".', 'OKCYAN'))
+    weight_group = parser.add_argument_group(title=ctext('weight options', "HEADER"), description=ctext('These options take a float, and control the strength of different comparison strategies.', 'OKCYAN'))
+    overlay_group = parser.add_argument_group(title=ctext('overlay options', "HEADER"), description=ctext('These options control the strength of the target image overlaid on top of the mosaic.', 'OKCYAN'))
+    extra_group = parser.add_argument_group(title=ctext('additional options', "HEADER"), description=ctext('All other options.', 'OKCYAN'))
     # I'm just using this pattern to shrink the arg creation code
-    for args, help, kwargs in [
+    for args, help, group, kwargs in [
         (('tile_folder',), 
             ("A path to a folder of images to build the mosaic with"), 
-            {},
+            positional_group,
+            {'metavar':ctext(ctext('TILE_FOLDER', 'BOLD'), 'OKBLUE')},
         ),
         (('source_image',), 
             ("A path to an image to base the mosaic on."), 
-            {},
+            positional_group,
+            {'metavar':ctext(ctext('SOURCE_IMAGE', 'BOLD'), 'OKBLUE')},
         ),
         (('tiles',), 
-            ('The number of tiles (horizontal and/or vertical) to use.'), 
-            {},
+            ('The number of tiles to use. (EX: "16x10" sets 16 horizontal, 10 vertical tiles. "8" sets both to 8)'), 
+            positional_group,
+            {'metavar':ctext(ctext('TILES', 'BOLD'), 'OKBLUE')},
         ),
         (('-o','--output'), 
             ('The path (and/or filename) to use. Default is a generated filename in the current directory.'), 
-            {},
+            extra_group,
+            {'metavar':ctext(ctext('PATH', 'OKBLUE'), 'OKBLUE')},
         ),
         (('-s','--scale'), 
-            (f'A float controlling the amount to rescale the input image. (Default {DEFAULT_SCALE})'), 
-            {'default':str(DEFAULT_SCALE)},
+            (f'The amount to rescale the input image.'), 
+            scale_group,
+            {'default':str(DEFAULT_SCALE), 'metavar':ctext('FLOAT|INTxINT', 'OKBLUE')},
         ),
         (('-c','--compare_scale'), 
-            (f'The resolution scale that tiles will be compared at. (Default {DEFAULT_COMPARE})'), 
-            {'default':str(DEFAULT_COMPARE)},
+            (f'The resolution that tiles will be compared at.'), 
+            scale_group,
+            {'default':str(DEFAULT_COMPARE), 'metavar':ctext('FLOAT|INTxINT', 'OKBLUE')},
         ),
         (('-l','--linear_error_weight'), 
-            (f'How much the "linear" difference between pixels affects the output. (Default {DEFAULT_LINEAR_WEIGHT})'), 
-            {'type':float, 'default':DEFAULT_LINEAR_WEIGHT},
+            (f'How much the "linear" difference between pixels affects the output. '), 
+            weight_group,
+            {'type':float, 'default':DEFAULT_LINEAR_WEIGHT, 'metavar':ctext('FLOAT', 'OKBLUE')},
         ),
         (('-k','--kernel_error_weight'), 
-            (f'How much the "kernel difference" comparison affects the output. (Default {DEFAULT_KERNEL_WEIGHT})'), 
-            {'type':float, 'default':DEFAULT_KERNEL_WEIGHT},
+            (f'How much the "kernel difference" comparison affects the output.'), 
+            weight_group,
+            {'type':float, 'default':DEFAULT_KERNEL_WEIGHT, 'metavar':ctext('FLOAT', 'OKBLUE')},
         ),
         (('-O','--overlay_opacity'), 
-            (f'If given, overlay original image on the mosaic using the given alpha. (Default {DEFAULT_OVERLAY})'), 
-            {'type':float, 'default':DEFAULT_OVERLAY},
+            (f'The alpha for a "normal" overlay of the target image over the mosaic.'), 
+            overlay_group,
+            {'type':float, 'default':DEFAULT_OVERLAY, 'metavar':ctext('FLOAT', 'OKBLUE')},
         ),
         (('-so','--subtle_overlay'), 
-            (f'The alpha for an alternate, less sharp method of overlaying the target image. (Default {DEFAULT_SUBTLE_OVERLAY})'), 
-            {'type':float, 'default':DEFAULT_SUBTLE_OVERLAY},
+            (f'The alpha for an alternate, less sharp method of overlaying the target image on the mosaic.'), 
+            overlay_group,
+            {'type':float, 'default':DEFAULT_SUBTLE_OVERLAY, 'metavar':ctext('FLOAT', 'OKBLUE')},
         ),
         (('-r','--repeat_penalty'), 
-            (f'How much to penalize repetition when selecting tiles. (Default {DEFAULT_REPEAT_PENALTY})'), 
-            {'type':float, 'default':DEFAULT_REPEAT_PENALTY},
+            (f'How much to penalize repetition when selecting tiles.'), 
+            weight_group,
+            {'type':float, 'default':DEFAULT_REPEAT_PENALTY, 'metavar':ctext('FLOAT', 'OKBLUE')},
         ),
-        (('-p','--preview'), 
+        (('-S','--show'), 
             ('If given, opens a preview of the output image upon completion.'), 
+            extra_group,
             {'action':'store_true'},
         ),
+        (('-h','--help'), 
+            ('Print this help message.'), 
+            extra_group,
+            {'action':'help'},
+        ),
     ]:
-        print(args, help, kwargs)
-        parser.add_argument(*args, help=help, **kwargs)
+        if 'default' in kwargs:
+            help += ctext(f"(default: {kwargs['default']})", 'OKBLUE')
+        group.add_argument(*args, help=ctext(help, 'OKCYAN'), **kwargs)
     args = parser.parse_args()
 
 
@@ -188,7 +215,7 @@ def setup_args():
         else:
             output_path = os.path.join(output_path, out_file)
 
-    show_preview = args.preview
+    show_preview = args.show
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~ Print friendly info about the current job ~~~~~~~~~~~~~~~~~~~~~~~~~
     cprint(f'Source image size: {source_image.width}x{source_image.height}', 'HEADER')
@@ -233,6 +260,15 @@ Printer = Printer()
 
 def _pad_text(text, padding):
     return text + padding[len(text):]
+
+
+def ctext(text, color) -> str:
+    """Generate a colored string and return it."""
+    if color.upper() in Printer.prntclrs:
+        color = Printer.prntclrs[color.upper()]
+    else:
+        color = Printer.prntclrs['ENDC']
+    return f"{color}{text}{Printer.prntclrs['ENDC']}"
 
 
 def cprint(text, color):
