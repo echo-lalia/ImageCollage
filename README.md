@@ -1,4 +1,4 @@
-# ImageCollage
+# HD Mosaic
 
 A script that creates a photo mosaic by comparing sub-tile pixels for a higher quality result.
 
