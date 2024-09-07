@@ -15,17 +15,20 @@ DEFAULT_SUBTLE_OVERLAY = 0.4
 DEFAULT_REPEAT_PENALTY = 0.1
 
 
-
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ARG SETUP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# -----------------------------------------------------------------------------------------------------------------------------
 def setup_args():
-    global show, output_path, subtle_overlay_weight, overlay_weight, repeat_penalty, \
-        kernel_pixel_weight, linear_pixel_weight, compare_scale, tile_directory, \
-        source_path, repeat_penalty, rescale_by, horizontal_tiles, vertical_tiles, \
-        args, source_image, tile_width, tile_height, compare_width, compare_height
+    global \
+        show_preview, output_path, subtle_overlay_weight, overlay_weight, repeat_penalty, \
+        kernel_error_weight, linear_error_weight, tile_directory, \
+        tile_width, tile_height, compare_width, compare_height, \
+        horizontal_tiles, vertical_tiles, source_image, \
+        output_width, output_height, num_image_tiles
 
 
     parser = argparse.ArgumentParser(
-        prog='ImageCollage',
-        description='This tool can be used to create a high-quality collage by comparing given image tiles to a source image.'
+        prog='HD_Mosaic',
+        description='This tool can be used to create a high-quality image mosaic by comparing given image tiles to a source image.'
     )
     # I'm just using this pattern to shrink the arg creation code
     for args, help, kwargs in [
@@ -53,16 +56,16 @@ def setup_args():
             (f'The resolution scale that tiles will be compared at. (Default {DEFAULT_COMPARE})'), 
             {'default':str(DEFAULT_COMPARE)},
         ),
-        (('-l','--linear_pixel_weight'), 
+        (('-l','--linear_error_weight'), 
             (f'How much the "linear" difference between pixels affects the output. (Default {DEFAULT_LINEAR_WEIGHT})'), 
             {'type':float, 'default':DEFAULT_LINEAR_WEIGHT},
         ),
-        (('-k','--kernel_pixel_weight'), 
+        (('-k','--kernel_error_weight'), 
             (f'How much the "kernel difference" comparison affects the output. (Default {DEFAULT_KERNEL_WEIGHT})'), 
             {'type':float, 'default':DEFAULT_KERNEL_WEIGHT},
         ),
         (('-O','--overlay_opacity'), 
-            (f'If given, overlay original image on the collage using the given alpha. (Default {DEFAULT_OVERLAY})'), 
+            (f'If given, overlay original image on the mosaic using the given alpha. (Default {DEFAULT_OVERLAY})'), 
             {'type':float, 'default':DEFAULT_OVERLAY},
         ),
         (('-so','--subtle_overlay'), 
@@ -83,6 +86,7 @@ def setup_args():
     args = parser.parse_args()
 
 
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~ Set up tile and source image resolution ~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # parse tiles
     if 'x' in args.tiles.lower():
         ht, vt = args.tiles.lower().split('x')
@@ -97,7 +101,6 @@ def setup_args():
         raise ValueError('"source_image" is a directory.')
     if not os.path.isdir(args.tile_folder):
         raise ValueError('"tile_folder" should point to a folder full of images.')
-
 
     # parse image scale
     rescale_by = args.scale
@@ -117,7 +120,6 @@ def setup_args():
             ))
     cprint('Successfully read source image', 'OKBLUE')
 
-
     # parse compare scale (and tile size)
     compare_scale = args.compare_scale
     tile_width = source_image.width // horizontal_tiles
@@ -132,18 +134,34 @@ def setup_args():
         compare_scale = float(compare_scale)
         compare_width = int(tile_width * compare_scale)
         compare_height = int(tile_height * compare_scale)
+    
 
+    # calculate real output size (for equally sized tiles)
+    output_width = tile_width * horizontal_tiles
+    output_height = tile_height * vertical_tiles
+
+    tile_directory = args.tile_folder
+    num_image_tiles = len(os.listdir(tile_directory))
+
+    cprint('Converting source image...', 'OKBLUE')
+    # resize input image for easier comparison with tiles
+    source_image = source_image.resize((output_width, output_height))
+    # convert to Lab color space for more accurate comparisons
+    source_image = source_image.convert(mode='LAB')
+
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~ Finish setting up other input args ~~~~~~~~~~~~~~~~~~~~~~~~~
     # setup error weights
-    linear_pixel_weight = args.linear_pixel_weight
-    kernel_pixel_weight = args.kernel_pixel_weight
+    linear_error_weight = args.linear_error_weight
+    kernel_error_weight = args.kernel_error_weight
 
     # other image weights
     overlay_weight = args.overlay_opacity
     subtle_overlay_weight = args.subtle_overlay
     repeat_penalty = args.repeat_penalty
 
+
     # setup input/output paths
-    tile_directory = args.tile_folder
     output_path = args.output
 
     # create generated output filename
@@ -155,8 +173,8 @@ def setup_args():
         # add each non-default param to the filename
         for real_var, default_var, var_sym in [
             (compare_scale, DEFAULT_COMPARE, 'c'),
-            (linear_pixel_weight, DEFAULT_LINEAR_WEIGHT, 'l'),
-            (kernel_pixel_weight, DEFAULT_KERNEL_WEIGHT, 'k'),
+            (linear_error_weight, DEFAULT_LINEAR_WEIGHT, 'l'),
+            (kernel_error_weight, DEFAULT_KERNEL_WEIGHT, 'k'),
             (repeat_penalty, DEFAULT_REPEAT_PENALTY, 'c'),
             (overlay_weight, DEFAULT_OVERLAY, 'O'),
             (subtle_overlay_weight, DEFAULT_SUBTLE_OVERLAY, 'so'),
@@ -170,27 +188,41 @@ def setup_args():
         else:
             output_path = os.path.join(output_path, out_file)
 
-    show = args.preview
+    show_preview = args.preview
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~ Print friendly info about the current job ~~~~~~~~~~~~~~~~~~~~~~~~~
+    cprint(f'Source image size: {source_image.width}x{source_image.height}', 'HEADER')
+    cprint(f'{num_image_tiles} input tiles, {tile_width}x{tile_height}px each', 'HEADER')
+    cprint(f'{horizontal_tiles}x{vertical_tiles} tiles in output image, totaling {horizontal_tiles * vertical_tiles}.', 'HEADER')
+    cprint(f'Final output size: {output_width}x{output_height}', 'HEADER')
+    cprint(f'Comparing at {compare_width}x{compare_height}px', 'HEADER')
+    cprint(f'linear_weight: {linear_error_weight}, kernel_weight: {kernel_error_weight}, repeat_penalty: {repeat_penalty}', 'HEADER')
+    cprint(f'Overlay alpha: {overlay_weight}, Subtle overlay alpha: {subtle_overlay_weight}', 'HEADER')
 
 
-prntclrs = {
-    'HEADER':'\033[95m',
-    'OKBLUE':'\033[94m',
-    'OKCYAN':'\033[96m',
-    'OKGREEN':'\033[92m',
-    'WARNING':'\033[93m',
-    'FAIL':'\033[91m',
-    'ENDC':'\033[0m',
-    'BOLD':'\033[1m',
-    'UNDERLINE':'\033[4m',
-}
 
+
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ PRINT HELPERS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# -----------------------------------------------------------------------------------------------------------------------------
 class Printer:
     """Simple helper for printing progress text."""
     max_line = ''
     load_chars = ["⢿", "⣻", "⣽", "⣾", "⣷", "⣯", "⣟", "⡿"]
 
     char_idx = 0
+
+    prntclrs = {
+        'HEADER':'\033[95m',
+        'OKBLUE':'\033[94m',
+        'OKCYAN':'\033[96m',
+        'OKGREEN':'\033[92m',
+        'WARNING':'\033[93m',
+        'FAIL':'\033[91m',
+        'ENDC':'\033[0m',
+        'BOLD':'\033[1m',
+        'UNDERLINE':'\033[4m',
+    }
 
     def next_char(self):
         """Get the next loading character"""
@@ -206,19 +238,19 @@ def _pad_text(text, padding):
 def cprint(text, color):
     """Print in color (and pad lines to erase old text)"""
     text = str(text)
-    if color.upper() in prntclrs:
-        color = prntclrs[color.upper()]
+    if color.upper() in Printer.prntclrs:
+        color = Printer.prntclrs[color.upper()]
     else:
-        color = prntclrs['ENDC']
+        color = Printer.prntclrs['ENDC']
     text = _pad_text(text, Printer.max_line)
-    print(f"{color}{text}{prntclrs['ENDC']}")
+    print(f"{color}{text}{Printer.prntclrs['ENDC']}")
 
 
 def cwrite(text):
     """Write to the terminal without starting a new line, erasing old text."""
     text = str(text)
-    color = prntclrs['OKCYAN']
-    text = f"{color}• {Printer.next_char()} - {text}{prntclrs['ENDC']}"
+    color = Printer.prntclrs['OKCYAN']
+    text = f"{color}• {Printer.next_char()} - {text}{Printer.prntclrs['ENDC']}"
     if len(text) > len(Printer.max_line):
         Printer.max_line = ' ' * len(text)
     else:
@@ -227,36 +259,9 @@ def cwrite(text):
 
 
 
-def setup():
-    global source_image, tile_width, tile_height, compare_width, compare_height
-    global output_width, output_height, num_image_tiles
 
-
-
-    # calculate real output size (for equally sized tiles)
-    output_width = tile_width * horizontal_tiles
-    output_height = tile_height * vertical_tiles
-
-    num_image_tiles = len(os.listdir(tile_directory))
-
-    cprint(f'Source image size: {source_image.width}x{source_image.height}', 'HEADER')
-    cprint(f'{num_image_tiles} input tiles, {tile_width}x{tile_height}px each', 'HEADER')
-    cprint(f'{horizontal_tiles}x{vertical_tiles} tiles in output image, totaling {horizontal_tiles * vertical_tiles}.', 'HEADER')
-    cprint(f'Final output size: {output_width}x{output_height}', 'HEADER')
-    cprint(f'Comparing at {compare_width}x{compare_height}px', 'HEADER')
-    cprint(f'linear_weight: {linear_pixel_weight}, kernel_weight: {kernel_pixel_weight}, repeat_penalty: {repeat_penalty}', 'HEADER')
-    cprint(f'Overlay alpha: {overlay_weight}, Subtle overlay alpha: {subtle_overlay_weight}', 'HEADER')
-
-    cprint('Converting source image...', 'OKBLUE')
-    # resize input image for easier comparison with tiles
-    source_image = source_image.resize((output_width, output_height))
-
-    # convert to Lab color space for more accurate comparisons
-    source_image = source_image.convert(mode='LAB')
-
-
-# def functions
-
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Image functions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# -----------------------------------------------------------------------------------------------------------------------------
 def crop_from_ratio(width_height, ratio):
     w, h = width_height
     rw, rh = ratio
@@ -348,15 +353,15 @@ def tile_kernel_diff_array(img):
     return arr / 255
 
 
-def source_overlay(collage, source_image):
-    overlay_img = ImageChops.overlay(collage, source_image)
-    return ImageChops.blend(collage, overlay_img, overlay_weight)
+def source_overlay(mosaic, source_image):
+    overlay_img = ImageChops.overlay(mosaic, source_image)
+    return ImageChops.blend(mosaic, overlay_img, overlay_weight)
 
 
-def subtle_overlay(collage, source_image):
+def subtle_overlay(mosaic, source_image):
     """Soften edges on source image, and blur the image withing each tile, before applying the overlay."""
     source_image = source_image.convert(mode="RGB")
-    collage = collage.convert(mode="RGB")
+    mosaic = mosaic.convert(mode="RGB")
 
     blur_amount = min(tile_width, tile_height) // 2
 
@@ -374,14 +379,18 @@ def subtle_overlay(collage, source_image):
             overlay_region = overlay_region.filter(ImageFilter.BoxBlur(blur_amount))
             source_image.paste(overlay_region, crop)
 
-    source_image = ImageChops.overlay(collage, source_image)
-    return ImageChops.blend(collage, source_image, subtle_overlay_weight)
+    source_image = ImageChops.overlay(mosaic, source_image)
+    return ImageChops.blend(mosaic, source_image, subtle_overlay_weight)
 
 
-# main
+
+
+# -----------------------------------------------------------------------------------------------------------------------------
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ MAIN ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# -----------------------------------------------------------------------------------------------------------------------------
 def main():
     global source_image, tile_width, tile_height, compare_width, compare_height
-    global output_width, output_height, num_image_tiles
+    global output_width, output_height, num_image_tiles, tile_directory
 
     tiles = []
     tile_idx = 0
@@ -398,18 +407,18 @@ def main():
     cprint(f"{num_image_tiles - bad_tile_files} tiles loaded.", "OKGREEN")
     
     # pre-generate reusable np arrays to represent the tiles
-    if linear_pixel_weight:
+    if linear_error_weight:
         cprint("Generating arrays from tiles...", "OKBLUE")
         tile_arrays = [tile_to_array(tile) for tile in tiles]
 
     # generate kernel diff arrays for each image
-    if kernel_pixel_weight:
+    if kernel_error_weight:
         cprint("Generating kernel diff arrays...", "OKBLUE")
         kernel_diff_arrays = [tile_kernel_diff_array(tile) for tile in tiles]
 
     repeat_penalties = np.array([0.0] * len(tiles))
     
-    collage = Image.new(mode='LAB', size=(output_width, output_height))
+    mosaic = Image.new(mode='LAB', size=(output_width, output_height))
 
     # iterate over each tile
     # tile order is randomly shuffled so that repetition penalty doesn't favour top/left corner
@@ -439,18 +448,18 @@ def main():
 
             final_errors = repeat_penalties
 
-            if linear_pixel_weight:
+            if linear_error_weight:
                 final_errors = (
                     final_errors
                     + find_tile_errors(source_region, tile_arrays, tile_to_array)
-                    * linear_pixel_weight
+                    * linear_error_weight
                 )
 
-            if kernel_pixel_weight:
+            if kernel_error_weight:
                 final_errors = (
                     final_errors
                     + find_tile_errors(source_region, kernel_diff_arrays, tile_kernel_diff_array)
-                    * kernel_pixel_weight
+                    * kernel_error_weight
                 )
 
             # get the first index where error was equal to the smallest error
@@ -461,26 +470,27 @@ def main():
             # track repeat penalty
             repeat_penalties[best_idx] += repeat_penalty
             
-            # add the best tile to the output collage
-            collage.paste(best_tile, crop)
+            # add the best tile to the output image
+            mosaic.paste(best_tile, crop)
+
 
     cprint(f"{total_tiles} tiles selected.", "OKGREEN")
 
     if overlay_weight:
         cprint('Applying overlay...', 'OKBLUE')
-        collage = source_overlay(collage, source_image)
+        mosaic = source_overlay(mosaic, source_image)
 
     if subtle_overlay_weight:
         cprint('Applying subtle overlay...', 'OKBLUE')
-        collage = subtle_overlay(collage, source_image)
+        mosaic = subtle_overlay(mosaic, source_image)
 
-    if show:
+    if show_preview:
         cprint('Showing img...', "OKBLUE")
-        collage.show()
+        mosaic.show()
 
     cprint('Saving img...', "OKBLUE")
-    collage = collage.convert(mode="RGB")
-    collage.save(output_path)
+    mosaic = mosaic.convert(mode="RGB")
+    mosaic.save(output_path)
     cprint(f'Saved as "{output_path}"', 'OKGREEN')
     cprint("Done!", 'OKGREEN')
 
@@ -489,5 +499,4 @@ def main():
 
 if __name__ == "__main__":
     setup_args()
-    setup()
     main()
