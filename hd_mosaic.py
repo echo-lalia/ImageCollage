@@ -171,8 +171,10 @@ def setup_args():
     num_image_tiles = len(os.listdir(tile_directory))
 
     cprint('Converting source image...', 'OKBLUE')
-    # resize input image for easier comparison with tiles
-    source_image = source_image.resize((output_width, output_height))
+    # resize input image for exact comparison with tiles
+    og_width, og_height = source_image.width, source_image.height
+    crop = crop_from_rescale((og_width, og_height), (output_width, output_height))
+    source_image = source_image.resize((output_width, output_height), box=crop)
     # convert to Lab color space for more accurate comparisons
     source_image = source_image.convert(mode='LAB')
 
@@ -218,7 +220,7 @@ def setup_args():
     show_preview = args.show
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~ Print friendly info about the current job ~~~~~~~~~~~~~~~~~~~~~~~~~
-    cprint(f'Source image size: {source_image.width}x{source_image.height}', 'HEADER')
+    cprint(f'Source image size: {og_width}x{og_height}', 'HEADER')
     cprint(f'{num_image_tiles} input tiles, {tile_width}x{tile_height}px each', 'HEADER')
     cprint(f'{horizontal_tiles}x{vertical_tiles} tiles in output image, totaling {horizontal_tiles * vertical_tiles}.', 'HEADER')
     cprint(f'Final output size: {output_width}x{output_height}', 'HEADER')
@@ -298,6 +300,19 @@ def cwrite(text):
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Image functions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # -----------------------------------------------------------------------------------------------------------------------------
+def crop_from_rescale(old_size, new_size):
+    ow, oh = old_size
+    nw, nh = new_size
+    width_shrink = (ow - nw) // 2
+    height_shrink = (oh - nh) // 2
+    return (
+        width_shrink,
+        height_shrink,
+        ow - width_shrink,
+        oh - height_shrink,
+    )
+
+
 def crop_from_ratio(width_height, ratio):
     w, h = width_height
     rw, rh = ratio
