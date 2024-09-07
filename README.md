@@ -38,7 +38,7 @@ The first one, which is commonly used to make mosaics in Photoshop, as well as i
     </td>
     <td>></br>></br>></br>></br>></td>
     <td align=center>
-      <img src="misc\images\collage_16x16_l0.0_k0.0_r1.0_O1.0_so0.0.jpg" height=300> 
+      <img src="misc\images\mosaic_16x16_l0.0_k0.0_r1.0_O1.0_so0.0.jpg" height=300> 
       <br/><br/><sup>
 
 `-l 0.0 -k 0.0 -r 1.0 -O 1.0 -so 0.0`
@@ -73,7 +73,7 @@ I like this strategy a lot better than the overlay strategy, but it still requir
     </td>
     <td>></br>></br>></br>></br>></td>
     <td align=center>
-      <img src="misc\images\collage_16x16_c0.015_k0.0_r0.0_O0.0_so0.0.jpg" height=300> 
+      <img src="misc\images\mosaic_16x16_c0.015_k0.0_r0.0_O0.0_so0.0.jpg" height=300> 
       <br/><br/><sup>
 
 `-c 0.015 -k 0.0 -r 0.0 -O 0.0 -so 0.0`
@@ -121,7 +121,7 @@ This is really important because it means that tiles aren't just chosen based on
     </td>
     <td>></br>></br>></br>></br>></td>
     <td align=center>
-      <img src="misc\images\collage_16x16_O0.0_so0.0.jpg" height=300> 
+      <img src="misc\images\mosaic_16x16_O0.0_so0.0.jpg" height=300> 
       <br/><br/><sup>
 
 `-O 0.0 -so 0.0`
@@ -151,11 +151,11 @@ We can take the target image, cut it up into tiles, and blur each tile separatel
   </tr>
   <tr>
     <td align=center>
-      <img src="misc\images\collage_16x16_l0.0_k0.0_r0.0_O0.0_so1.0.jpg" height=300 > <br/>&nbsp
+      <img src="misc\images\mosaic_16x16_l0.0_k0.0_r0.0_O0.0_so1.0.jpg" height=300 > <br/>&nbsp
     </td>
     <td>></br>></br>></br>></br>></td>
     <td align=center>
-      <img src="misc\images\collage_16x16_so0.6.jpg" height=300> 
+      <img src="misc\images\mosaic_16x16_so0.6.jpg" height=300> 
       <br/><br/><sup>
 
 `-so 0.6`
