@@ -10,9 +10,9 @@ DEFAULT_SCALE = 1.0
 DEFAULT_COMPARE = 0.1
 DEFAULT_LINEAR_WEIGHT = 1.0
 DEFAULT_KERNEL_WEIGHT = 0.4
-DEFAULT_OVERLAY = 0.1
-DEFAULT_SUBTLE_OVERLAY = 0.4
-DEFAULT_REPEAT_PENALTY = 0.1
+DEFAULT_OVERLAY = 0.0
+DEFAULT_SUBTLE_OVERLAY = 0.3
+DEFAULT_REPEAT_PENALTY = 0.2
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ARG SETUP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -204,7 +204,7 @@ def setup_args():
             (compare_scale, DEFAULT_COMPARE, 'c'),
             (linear_error_weight, DEFAULT_LINEAR_WEIGHT, 'l'),
             (kernel_error_weight, DEFAULT_KERNEL_WEIGHT, 'k'),
-            (repeat_penalty, DEFAULT_REPEAT_PENALTY, 'c'),
+            (repeat_penalty, DEFAULT_REPEAT_PENALTY, 'r'),
             (overlay_weight, DEFAULT_OVERLAY, 'O'),
             (subtle_overlay_weight, DEFAULT_SUBTLE_OVERLAY, 'so'),
         ]:
