@@ -240,6 +240,7 @@ def setup_args():
         overlay_alpha=overlay_weight,
         subtle_overlay_alpha=subtle_overlay_weight,
         tile_directory=tile_directory,
+        repeat_penalty=repeat_penalty,
     )
     mosaic.fit_tiles()
     mosaic.save(output_path=output_path, show_preview=show_preview)
@@ -331,11 +332,6 @@ def crop_from_rescale(old_size, new_size):
 
 
 
-
-def tile_error(source, tile) -> float:
-    """Compare pixels in one tile, returning the error score"""
-
-    return np.mean(np.abs(source - tile)) / 255
 
 
 def find_tile_errors(source_region:Image.Image, tile_arrays:list, array_function:callable) -> np.array:
@@ -436,97 +432,94 @@ class Scale:
         return self.h
 
 
+class InputTile:
+    tile_size = None
+    compare_size = None
+    kernel_error_weight = DEFAULT_KERNEL_WEIGHT
+    linear_error_weight = DEFAULT_LINEAR_WEIGHT
+    repeat_penalty = DEFAULT_REPEAT_PENALTY
 
-class Mosaic:
-    "A class to hold and work on the mosaic tiles."
-    def __init__(
-            self,
-            source_image,
-            tile_size,
-            compare_size,
-            output_size,
-            output_tiles_res,
-            linear_error_weight,
-            kernel_error_weight,
-            overlay_alpha,
-            subtle_overlay_alpha,
-            tile_directory,
-    ):
-        self.source_image = source_image
-        self.tile_size = tile_size
-        self.compare_size = compare_size
-        self.output_size = output_size
-        self.output_tiles_res = output_tiles_res
-
-        self.tiles = self.load_tiles(tile_directory)
-
-        self.linear_error_weight = linear_error_weight
-        self.kernel_error_weight = kernel_error_weight
-
-        self.overlay_alpha = overlay_alpha
-        self.subtle_overlay_alpha = subtle_overlay_alpha
-
-        # pre-generate reusable np arrays to represent the tiles
-        if linear_error_weight:
-            cprint("Generating arrays from tiles...", "OKBLUE")
-            self.tile_arrays = [tile_to_array(tile) for tile in self.tiles]
-
-        # generate kernel diff arrays for each image
-        if kernel_error_weight:
-            cprint("Generating kernel diff arrays...", "OKBLUE")
-            self.kernel_diff_arrays = [tile_kernel_diff_array(tile) for tile in self.tiles]
-        
-        # store penalty for repeated tiles
-        self.repeat_penalties = np.array([0.0] * len(self.tiles))
-
-        # finally, create the blank image to create our mosaic
-        self.mosaic = Image.new(mode='LAB', size=tuple(self.output_size))
-
-
-    def _load_image_tile(self, img_file):
+    """A class to hold and work on input tiles"""
+    def __init__(self, img):
         """Load one image tile, converted to proper output size"""
-        img = Image.open(img_file)
+        if isinstance(img, Image.Image):
+            self.img = img
+        else:
+            self.img = Image.open(img)
 
         # calculate image cropped size to match tile aspect ratio
-        trgt_w, trgt_h = self._crop_from_ratio((img.width, img.height), self.tile_size)
-        w_delta = img.width - trgt_w
-        h_delta = img.height - trgt_h
+        trgt_w, trgt_h = self._crop_from_ratio((self.img.width, self.img.height), self.tile_size)
+        w_delta = self.img.width - trgt_w
+        h_delta = self.img.height - trgt_h
         crop = (
             w_delta // 2,
             h_delta // 2,
-            img.width - (w_delta // 2),
-            img.height - (h_delta // 2),
+            self.img.width - (w_delta // 2),
+            self.img.height - (h_delta // 2),
         )
         # crop and resize image to tile size
-        img = img.resize(self.tile_size, box=crop)
+        self.img = self.img.resize(self.tile_size, box=crop)
+
         # convert to Lab color space for more accurate comparisons
         try:
-            return img.convert(mode='LAB')
+            self.img = self.img.convert(mode='LAB')
         except:
             # Sometimes the conversion fails due to the color mode the image loads with.
-            return img.convert(mode='RGB').convert(mode="LAB")
+            self.img =  self.img.convert(mode='RGB').convert(mode="LAB")
+        
+        self.linear_array = self._as_linear_array()
+        self.kernel_diff_array = self._as_kernel_diff_array()
+        self.repeat_error = 0.0
 
 
-    def load_tiles(self, tile_directory):
-        """Open, crop, and rescale tiles from tile directory"""
-        tiles = []
-        tile_idx = 0
-        bad_tile_files = 0
-        num_image_tiles = len(os.listdir(tile_directory))
-        for img_file in os.scandir(tile_directory):
-            tile_idx += 1
-            cwrite(f'Loading tile {tile_idx}/{num_image_tiles} ({img_file.name})...')
-            # PIL will determine what images are or are not valid.
-            try:
-                tiles.append(self._load_image_tile(img_file))
-            except (OSError, ValueError):
-                bad_tile_files += 1
-                cprint(f"Warning: {img_file.name} could not be loaded", "WARNING")
-        cprint(f"{num_image_tiles - bad_tile_files} tiles loaded.", "OKGREEN")
-        return tiles
+    def add_to_mosaic(self, mosaic, crop):
+        self.repeat_error += InputTile.repeat_penalty
+        mosaic.paste(self.img, crop)
+
+
+    def tile_error(self, source) -> float:
+        """Get total error score for this tile"""
+        err = self.repeat_penalty
+        err += (np.mean(np.abs(source.linear_array - self.linear_array)) / 255) * InputTile.linear_error_weight
+        err += (np.mean(np.abs(source.kernel_diff_array - self.kernel_diff_array)) / 255) * InputTile.kernel_error_weight
+        return err
+
+
+    def _as_kernel_diff_array(self):
+        """
+        For each pixel, avg val with neighbors to determine pixel kernel,
+        return array representing the differences between the pixels and the pixel kernels.
+        """
+        img = self.img.resize((compare_width, compare_height))
+        # represent image by nested arrays for simplicity
+        arr = np.array([])
+        for y in range(img.height):
+            for x in range(img.width):
+                # get all neighbors
+                avg_val = 0
+                for ky in range(3):
+                    for kx in range(3):
+                        dx = x - 1 + kx
+                        dy = y - 1 + ky
+                        if 0 <= dx < img.width \
+                        and 0 <= dy < img.height:
+                            avg_val += img.getpixel((dx, dy))[0] / 9
+                
+                # compare to real val
+                arr = np.append(arr, abs(img.getpixel((x,y))[0] - avg_val))
+        return arr
+
+
+    def _as_linear_array(self):
+        img = self.img.resize(self.compare_size)
+        arr = np.array(
+            [img.getpixel((x,y)) for y in range(img.height) for x in range(img.width)]
+            )
+        return arr
 
 
     def _crop_from_ratio(self, width_height, ratio):
+        """Return the cropped width/height to match the given ratio"""
         w, h = width_height
         rw, rh = ratio
 
@@ -542,7 +535,77 @@ class Mosaic:
             h *= width_factor
         
         return Scale(int(w), int(h))
-    
+
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Mosaic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# -----------------------------------------------------------------------------------------------------------------------------
+class Mosaic:
+    "A class to hold and work on the mosaic tiles."
+    def __init__(
+            self,
+            source_image,
+            tile_size,
+            compare_size,
+            output_size,
+            output_tiles_res,
+            linear_error_weight,
+            kernel_error_weight,
+            overlay_alpha,
+            subtle_overlay_alpha,
+            tile_directory,
+            repeat_penalty,
+    ):
+        self.source_image = source_image
+        InputTile.tile_size = tile_size
+        InputTile.compare_size = compare_size
+        self.output_size = output_size
+        self.output_tiles_res = output_tiles_res
+
+
+        self.tiles = self.load_tiles(tile_directory)
+
+        InputTile.linear_error_weight = linear_error_weight
+        InputTile.kernel_error_weight = kernel_error_weight
+        InputTile.repeat_penalty = repeat_penalty
+
+        self.overlay_alpha = overlay_alpha
+        self.subtle_overlay_alpha = subtle_overlay_alpha
+
+        # # pre-generate reusable np arrays to represent the tiles
+        # if linear_error_weight:
+        #     cprint("Generating arrays from tiles...", "OKBLUE")
+        #     self.tile_arrays = [tile_to_array(tile) for tile in self.tiles]
+
+        # # generate kernel diff arrays for each image
+        # if kernel_error_weight:
+        #     cprint("Generating kernel diff arrays...", "OKBLUE")
+        #     self.kernel_diff_arrays = [tile_kernel_diff_array(tile) for tile in self.tiles]
+        
+        # store penalty for repeated tiles
+        # self.repeat_penalties = np.array([0.0] * len(self.tiles))
+
+        # finally, create the blank image to create our mosaic
+        self.mosaic = Image.new(mode='LAB', size=tuple(self.output_size))
+
+
+    def load_tiles(self, tile_directory):
+        """Open, crop, and rescale tiles from tile directory"""
+        tiles = []
+        tile_idx = 0
+        bad_tile_files = 0
+        num_image_tiles = len(os.listdir(tile_directory))
+        for img_file in os.scandir(tile_directory):
+            tile_idx += 1
+            cwrite(f'Loading tile {tile_idx}/{num_image_tiles} ({img_file.name})...')
+            # PIL will determine what images are or are not valid.
+            try:
+                tiles.append(InputTile(img_file))
+            except (OSError, ValueError):
+                bad_tile_files += 1
+                cprint(f"Warning: {img_file.name} could not be loaded", "WARNING")
+        cprint(f"{num_image_tiles - bad_tile_files} tiles loaded.", "OKGREEN")
+        return tiles
+
 
     def fit_tiles(self):
         """
@@ -551,7 +614,7 @@ class Mosaic:
         and add it to the mosaic.
         """
         horizontal_tiles, vertical_tiles = self.output_tiles_res
-        tile_width, tile_height = self.tile_size
+        tile_width, tile_height = InputTile.tile_size
 
         tile_ys = list(range(vertical_tiles))
         tile_xs = list(range(horizontal_tiles))
@@ -567,42 +630,46 @@ class Mosaic:
                 cwrite(f"Comparing tile {tile_idx}/{total_tiles} ({tile_x}x{tile_y})...")
 
                 # find the coordinate region of this tile
+                # crop region for comparison
                 crop = (
                     tile_x * tile_width,
                     tile_y * tile_height,
                     tile_x * tile_width + tile_width,
                     tile_y * tile_height + tile_height,
                 )
-                # crop region for comparison
-                source_region = self.source_image.crop(crop)
+                # convert to an InputTile for comparison
+                source_region = InputTile(self.source_image.crop(crop))
 
                 # scan and find best matching tile image
-                final_errors = self.repeat_penalties
+                final_errors = [tile.compare(source_region) for tile in self.tiles]
+                # final_errors = self.repeat_penalties
 
-                if self.linear_error_weight:
-                    final_errors = (
-                        final_errors
-                        + find_tile_errors(source_region, self.tile_arrays, tile_to_array)
-                        * self.linear_error_weight
-                    )
+                # if self.linear_error_weight:
+                #     final_errors = (
+                #         final_errors
+                #         + find_tile_errors(source_region, self.tile_arrays, tile_to_array)
+                #         * self.linear_error_weight
+                #     )
 
-                if self.kernel_error_weight:
-                    final_errors = (
-                        final_errors
-                        + find_tile_errors(source_region, self.kernel_diff_arrays, tile_kernel_diff_array)
-                        * self.kernel_error_weight
-                    )
+                # if self.kernel_error_weight:
+                #     final_errors = (
+                #         final_errors
+                #         + find_tile_errors(source_region, self.kernel_diff_arrays, tile_kernel_diff_array)
+                #         * self.kernel_error_weight
+                #     )
 
                 # get the first index where error was equal to the smallest error
                 # select the tile at that index
-                best_idx, *_ = np.where(final_errors == final_errors.min())[0]
+                # best_idx, *_ = np.where(final_errors == final_errors.min())[0]
+                best_idx = final_errors.index(min(final_errors))
                 best_tile = self.tiles[best_idx]
 
                 # track repeat penalty
-                self.repeat_penalties[best_idx] += repeat_penalty
+                # self.repeat_penalties[best_idx] += repeat_penalty
                 
                 # add the best tile to the output image
-                self.mosaic.paste(best_tile, crop)
+                best_tile.add_to_mosaic(self.mosaic, crop)
+                # self.mosaic.paste(best_tile, crop)
 
         cprint(f"{total_tiles} tiles selected.", "OKGREEN")
 
@@ -616,6 +683,7 @@ class Mosaic:
 
 
     def save(self, show_preview, output_path):
+        """Save (and/or show) the generated mosaic"""
         if show_preview:
             cprint('Showing img...', "OKBLUE")
             self.mosaic.show()
