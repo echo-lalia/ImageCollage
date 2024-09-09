@@ -3,6 +3,7 @@ from PIL import Image, ImageOps, ImageChops, ImageFilter, ImageEnhance
 import numpy as np
 import argparse
 import random
+import time
 import os
 
 
@@ -362,6 +363,18 @@ def crop_from_rescale(old_size, new_size):
 
 
 
+class DebugTimer:
+    def __init__(self, text):
+        self.text = text
+        self.start_time = time.time()
+    
+    def print(self):
+        cprint(
+            f"{self.text}: {time.time()-self.start_time:.2f}s",
+            "UNDERLINE"
+        )
+
+
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Scale ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # -----------------------------------------------------------------------------------------------------------------------------
@@ -449,8 +462,7 @@ class InputTile:
         For each pixel, avg val with neighbors to determine pixel kernel,
         return array representing the differences between the pixels and the pixel kernels.
         """
-        img = self.img.resize((compare_width, compare_height))
-        # represent image by nested arrays for simplicity
+        img = self.img.resize(self.compare_size)
         arr = np.array([])
         for y in range(img.height):
             for x in range(img.width):
@@ -517,6 +529,8 @@ class Mosaic:
     # debug stuff
     min_error = 100.0
     max_error = 0.0
+    start_time = None
+
     def __init__(
             self,
             source_image,
@@ -542,12 +556,22 @@ class Mosaic:
         Mosaic.subdivisions = subdivisions
         Mosaic.subdivision_threshold = subdivision_threshold
 
+        if VERBOSE:
+            timer = DebugTimer("Setup detail map")
+
         if detail_map is None:
             self.detail_map = self._make_detail_map()
         else:
             self.detail_map = self._setup_detail_map(detail_map)
+        
+        if VERBOSE:
+            timer.print()
+            timer = DebugTimer("Load tiles")
 
         self.tiles = self.load_tiles(tile_directory)
+
+        if VERBOSE:
+            timer.print()
 
         InputTile.linear_error_weight = linear_error_weight
         InputTile.kernel_error_weight = kernel_error_weight
