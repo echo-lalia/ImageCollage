@@ -13,6 +13,7 @@ DEFAULT_KERNEL_WEIGHT = 0.0
 DEFAULT_OVERLAY = 0.0
 DEFAULT_SUBTLE_OVERLAY = 0.3
 DEFAULT_REPEAT_PENALTY = 0.2
+DEFAULT_SUBDIVISIONS = 2
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ARG SETUP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -241,6 +242,7 @@ def main():
         subtle_overlay_alpha=subtle_overlay_weight,
         tile_directory=tile_directory,
         repeat_penalty=repeat_penalty,
+        subdivisions = 2,
     )
     mosaic.fit_tiles()
     mosaic.save(output_path=output_path, show_preview=show_preview)
@@ -332,6 +334,9 @@ def crop_from_rescale(old_size, new_size):
 
 
 
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Scale ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# -----------------------------------------------------------------------------------------------------------------------------
 class Scale:
     "A simple helper for bundling width/height information"
     def __init__(self, width, height):
@@ -354,6 +359,10 @@ class Scale:
         return self.h
 
 
+
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ InputTile ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# -----------------------------------------------------------------------------------------------------------------------------
 class InputTile:
     tile_size = None
     compare_size = None
@@ -401,7 +410,7 @@ class InputTile:
 
     def compare(self, source) -> float:
         """Get total error score for this tile"""
-        err = self.repeat_penalty
+        err = self.repeat_error
         err += (np.mean(np.abs(source.linear_array - self.linear_array)) / 255) * InputTile.linear_error_weight
         err += (np.mean(np.abs(source.kernel_diff_array - self.kernel_diff_array)) / 255) * InputTile.kernel_error_weight
         return err
@@ -463,6 +472,7 @@ class InputTile:
 # -----------------------------------------------------------------------------------------------------------------------------
 class Mosaic:
     "A class to hold and work on the mosaic tiles."
+    subdivisions = DEFAULT_SUBDIVISIONS
     def __init__(
             self,
             source_image,
@@ -476,12 +486,14 @@ class Mosaic:
             subtle_overlay_alpha,
             tile_directory,
             repeat_penalty,
+            subdivisions,
     ):
         self.source_image = source_image
         InputTile.tile_size = tile_size
         InputTile.compare_size = compare_size
         self.output_size = output_size
         self.output_tiles_res = output_tiles_res
+        Mosaic.subdivisions = subdivisions
 
 
         self.tiles = self.load_tiles(tile_directory)
