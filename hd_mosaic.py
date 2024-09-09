@@ -13,9 +13,11 @@ DEFAULT_LINEAR_WEIGHT = 1.0
 DEFAULT_KERNEL_WEIGHT = 0.1
 DEFAULT_OVERLAY = 0.0
 DEFAULT_SUBTLE_OVERLAY = 0.3
-DEFAULT_REPEAT_PENALTY = 0.2
+DEFAULT_REPEAT_PENALTY = 0.1
 DEFAULT_SUBDIVISIONS = 1
 DEFAULT_SUBDIVISION_THRESHOLD = 150
+
+VERBOSE = False
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ARG SETUP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -27,7 +29,7 @@ def main():
         kernel_error_weight, linear_error_weight, tile_directory, \
         tile_width, tile_height, compare_width, compare_height, \
         horizontal_tiles, vertical_tiles, source_image, \
-        output_width, output_height, num_image_tiles
+        output_width, output_height, num_image_tiles, VERBOSE
 
 
     parser = argparse.ArgumentParser(
@@ -114,6 +116,11 @@ def main():
             extra_group,
             {'type':int, 'default':DEFAULT_SUBDIVISION_THRESHOLD, 'metavar':ctext('INT', 'OKBLUE')},
         ),
+        (('-V','--verbose'), 
+            ('Print additional debug information.'), 
+            extra_group,
+            {'action':'store_true'},
+        ),
         (('-h','--help'), 
             ('Print this help message.'), 
             extra_group,
@@ -124,7 +131,7 @@ def main():
             help += ctext(f"(default: {kwargs['default']})", 'OKBLUE')
         group.add_argument(*args, help=ctext(help, 'OKCYAN'), **kwargs)
     args = parser.parse_args()
-
+    VERBOSE = args.verbose
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~ Set up tile and source image resolution ~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # parse tiles
@@ -421,14 +428,6 @@ class InputTile:
         self.linear_array = self._as_linear_array()
         self.kernel_diff_array = self._as_kernel_diff_array()
         self.repeat_error = 0.0
-
-
-    # def add_to_mosaic(self, mosaic, crop, rescale=None):
-    #     self.repeat_error += InputTile.repeat_penalty
-    #     img = self.img
-    #     if rescale is not None:
-    #         img = img.resize(rescale)
-    #     mosaic.paste(img, crop)
     
 
     def get_image(self, resize=None):
@@ -495,7 +494,8 @@ class InputTile:
             h *= width_factor
         
         return Scale(int(w), int(h))
-    
+
+
 class DummyTile:
     # TODO: refactor this into a parent class for InputTile
     def __init__(self, img):
@@ -503,12 +503,7 @@ class DummyTile:
 
     def get_image(self, resize=None):
         return self.img.resize(resize) if resize else self.img
-    
-    # def add_to_mosaic(self, mosaic, crop, rescale=None):
-    #     img = self.img
-    #     if rescale is not None:
-    #         img = img.resize(rescale)
-    #     mosaic.paste(img, crop)
+
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Mosaic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -518,6 +513,10 @@ class Mosaic:
     subdivisions = DEFAULT_SUBDIVISIONS
     subdivision_threshold = DEFAULT_SUBDIVISION_THRESHOLD
     tile_size = None
+
+    # debug stuff
+    min_error = 100.0
+    max_error = 0.0
     def __init__(
             self,
             source_image,
@@ -582,12 +581,7 @@ class Mosaic:
         vignette = ImageEnhance.Contrast(
             ImageChops.overlay(vignette, vignette)
             ).enhance(2)
-        # JUSTFORTESTING:
-        ImageEnhance.Contrast(
-            ImageOps.autocontrast(
-                ImageChops.overlay(edge_map, vignette)
-                )
-            ).enhance(2).resize((512,512), resample=Image.Resampling.NEAREST).show()
+
         # combine edge map and vignette to make a center-biased edge map, as our detail map
         return ImageEnhance.Contrast(
             ImageOps.autocontrast(
@@ -678,6 +672,14 @@ class Mosaic:
         # scan and find best matching tile image
         final_errors = [tile.compare(source_region) for tile in self.tiles]
 
+        if VERBOSE:
+            min_err = min(final_errors)
+            max_err = max(final_errors)
+            if min_err < self.min_error:
+                self.min_error = min_err
+            if max_err > self.max_error:
+                self.max_error = max_err
+
         # get the first index where error was equal to the smallest error
         # select the tile at that index
         best_idx = final_errors.index(min(final_errors))
@@ -718,11 +720,7 @@ class Mosaic:
                 self.mosaic.paste(
                     this_tile.get_image(), box=crop
                 )
-                # this_tile.add_to_mosaic(self.mosaic, crop)
 
-                
-                # # add the best tile to the output image
-                # best_tile.add_to_mosaic(self.mosaic, crop)
 
         cprint(f"{total_tiles} tiles selected.", "OKGREEN")
 
@@ -733,6 +731,9 @@ class Mosaic:
         if self.subtle_overlay_alpha:
             cprint('Applying subtle overlay...', 'OKBLUE')
             self.mosaic = self.add_subtle_overlay()
+        
+        if VERBOSE:
+            cprint(f'Smallest error: {self.min_error}, largest error: {self.max_error}', color="UNDERLINE")
 
 
     def add_normal_overlay(self):
