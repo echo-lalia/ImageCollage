@@ -9,7 +9,7 @@ import os
 DEFAULT_SCALE = 1.0
 DEFAULT_COMPARE = 0.1
 DEFAULT_LINEAR_WEIGHT = 1.0
-DEFAULT_KERNEL_WEIGHT = 0.4
+DEFAULT_KERNEL_WEIGHT = 0.0
 DEFAULT_OVERLAY = 0.0
 DEFAULT_SUBTLE_OVERLAY = 0.3
 DEFAULT_REPEAT_PENALTY = 0.2
@@ -18,7 +18,7 @@ DEFAULT_REPEAT_PENALTY = 0.2
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ARG SETUP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # -----------------------------------------------------------------------------------------------------------------------------
 
-def setup_args():
+def main():
     global \
         show_preview, output_path, subtle_overlay_weight, overlay_weight, repeat_penalty, \
         kernel_error_weight, linear_error_weight, tile_directory, \
@@ -332,84 +332,6 @@ def crop_from_rescale(old_size, new_size):
 
 
 
-
-
-def find_tile_errors(source_region:Image.Image, tile_arrays:list, array_function:callable) -> np.array:
-    """
-    Convert source region using given array function, 
-    and compare to tile arrays to find the error for each.
-    array_function defaults to `tile_to_array`
-    """
-    
-    source_arr = array_function(source_region)
-    
-    return np.array([tile_error(source_arr, tile_arr) for tile_arr in tile_arrays])
-
-
-def tile_to_array(img):
-    img = img.resize((compare_width, compare_height))
-    arr = np.array(
-        [img.getpixel((x,y)) for y in range(img.height) for x in range(img.width)]
-        )
-    return arr
-
-
-def tile_kernel_diff_array(img):
-    """
-    For each pixel, avg val with neighbors to determine pixel kernel,
-    return array representing the differences between the pixels and the pixel kernels.
-    """
-    img = img.resize((compare_width, compare_height))
-    # represent image by nested arrays for simplicity
-    arr = np.array([])
-    for y in range(img.height):
-        for x in range(img.width):
-            # get all neighbors
-            avg_val = 0
-            for ky in range(3):
-                for kx in range(3):
-                    dx = x - 1 + kx
-                    dy = y - 1 + ky
-                    if 0 <= dx < img.width \
-                    and 0 <= dy < img.height:
-                        avg_val += img.getpixel((dx, dy))[0] / 9
-            
-            # compare to real val
-            arr = np.append(arr, abs(img.getpixel((x,y))[0] - avg_val))
-    return arr / 255
-
-
-def source_overlay(mosaic, source_image):
-    overlay_img = ImageChops.overlay(mosaic, source_image)
-    return ImageChops.blend(mosaic, overlay_img, overlay_weight)
-
-
-def subtle_overlay(mosaic, source_image):
-    """Soften edges on source image, and blur the image withing each tile, before applying the overlay."""
-    source_image = source_image.convert(mode="RGB")
-    mosaic = mosaic.convert(mode="RGB")
-
-    blur_amount = min(tile_width, tile_height) // 2
-
-    # blur each tile segment of the source separately
-    for tile_x in range(horizontal_tiles):
-        for tile_y in range(vertical_tiles):
-
-            crop = (
-                tile_x * tile_width,
-                tile_y * tile_height,
-                tile_x * tile_width + tile_width,
-                tile_y * tile_height + tile_height,
-            )
-            overlay_region = source_image.crop(crop)
-            overlay_region = overlay_region.filter(ImageFilter.BoxBlur(blur_amount))
-            source_image.paste(overlay_region, crop)
-
-    source_image = ImageChops.overlay(mosaic, source_image)
-    return ImageChops.blend(mosaic, source_image, subtle_overlay_weight)
-
-
-
 class Scale:
     "A simple helper for bundling width/height information"
     def __init__(self, width, height):
@@ -477,7 +399,7 @@ class InputTile:
         mosaic.paste(self.img, crop)
 
 
-    def tile_error(self, source) -> float:
+    def compare(self, source) -> float:
         """Get total error score for this tile"""
         err = self.repeat_penalty
         err += (np.mean(np.abs(source.linear_array - self.linear_array)) / 255) * InputTile.linear_error_weight
@@ -571,20 +493,7 @@ class Mosaic:
         self.overlay_alpha = overlay_alpha
         self.subtle_overlay_alpha = subtle_overlay_alpha
 
-        # # pre-generate reusable np arrays to represent the tiles
-        # if linear_error_weight:
-        #     cprint("Generating arrays from tiles...", "OKBLUE")
-        #     self.tile_arrays = [tile_to_array(tile) for tile in self.tiles]
-
-        # # generate kernel diff arrays for each image
-        # if kernel_error_weight:
-        #     cprint("Generating kernel diff arrays...", "OKBLUE")
-        #     self.kernel_diff_arrays = [tile_kernel_diff_array(tile) for tile in self.tiles]
-        
-        # store penalty for repeated tiles
-        # self.repeat_penalties = np.array([0.0] * len(self.tiles))
-
-        # finally, create the blank image to create our mosaic
+        # create the blank image to create our mosaic
         self.mosaic = Image.new(mode='LAB', size=tuple(self.output_size))
 
 
@@ -642,44 +551,56 @@ class Mosaic:
 
                 # scan and find best matching tile image
                 final_errors = [tile.compare(source_region) for tile in self.tiles]
-                # final_errors = self.repeat_penalties
-
-                # if self.linear_error_weight:
-                #     final_errors = (
-                #         final_errors
-                #         + find_tile_errors(source_region, self.tile_arrays, tile_to_array)
-                #         * self.linear_error_weight
-                #     )
-
-                # if self.kernel_error_weight:
-                #     final_errors = (
-                #         final_errors
-                #         + find_tile_errors(source_region, self.kernel_diff_arrays, tile_kernel_diff_array)
-                #         * self.kernel_error_weight
-                #     )
 
                 # get the first index where error was equal to the smallest error
                 # select the tile at that index
-                # best_idx, *_ = np.where(final_errors == final_errors.min())[0]
                 best_idx = final_errors.index(min(final_errors))
                 best_tile = self.tiles[best_idx]
-
-                # track repeat penalty
-                # self.repeat_penalties[best_idx] += repeat_penalty
                 
                 # add the best tile to the output image
                 best_tile.add_to_mosaic(self.mosaic, crop)
-                # self.mosaic.paste(best_tile, crop)
 
         cprint(f"{total_tiles} tiles selected.", "OKGREEN")
 
         if self.overlay_alpha:
             cprint('Applying overlay...', 'OKBLUE')
-            self.mosaic = source_overlay(self.mosaic, self.source_image)
+            self.mosaic = self.add_normal_overlay()
         
         if self.subtle_overlay_alpha:
             cprint('Applying subtle overlay...', 'OKBLUE')
-            self.mosaic = subtle_overlay(self.mosaic, self.source_image)
+            self.mosaic = self.add_subtle_overlay()
+
+
+    def add_normal_overlay(self):
+        overlay_img = ImageChops.overlay(self.mosaic, self.source_image)
+        return ImageChops.blend(self.mosaic, overlay_img, self.overlay_alpha)
+
+
+    def add_subtle_overlay(self):
+        """Soften edges on target image, and blur the image withing each tile, before applying the overlay."""
+        source_image = self.source_image.convert(mode="RGB")
+        mosaic = self.mosaic.convert(mode="RGB")
+
+        blur_amount = min(InputTile.tile_size) // 2
+
+        # blur each tile segment of the source separately
+        horizontal_tiles, vertical_tiles = self.output_tiles_res
+        tile_width, tile_height = InputTile.tile_size
+        for tile_x in range(horizontal_tiles):
+            for tile_y in range(vertical_tiles):
+
+                crop = (
+                    tile_x * tile_width,
+                    tile_y * tile_height,
+                    tile_x * tile_width + tile_width,
+                    tile_y * tile_height + tile_height,
+                )
+                overlay_region = source_image.crop(crop)
+                overlay_region = overlay_region.filter(ImageFilter.BoxBlur(blur_amount))
+                source_image.paste(overlay_region, crop)
+
+        source_image = ImageChops.overlay(mosaic, source_image)
+        return ImageChops.blend(mosaic, source_image, self.subtle_overlay_alpha)
 
 
     def save(self, show_preview, output_path):
@@ -696,4 +617,4 @@ class Mosaic:
 
 
 if __name__ == "__main__":
-    setup_args()
+    main()
