@@ -1,5 +1,5 @@
 
-from PIL import Image, ImageChops, ImageFilter
+from PIL import Image, ImageOps, ImageChops, ImageFilter, ImageEnhance
 import numpy as np
 import argparse
 import random
@@ -8,12 +8,14 @@ import os
 
 DEFAULT_SCALE = 1.0
 DEFAULT_COMPARE = 0.1
+MAX_DEFAULT_COMPARE_RES = 9
 DEFAULT_LINEAR_WEIGHT = 1.0
-DEFAULT_KERNEL_WEIGHT = 0.0
+DEFAULT_KERNEL_WEIGHT = 0.1
 DEFAULT_OVERLAY = 0.0
 DEFAULT_SUBTLE_OVERLAY = 0.3
 DEFAULT_REPEAT_PENALTY = 0.2
-DEFAULT_SUBDIVISIONS = 2
+DEFAULT_SUBDIVISIONS = 1
+DEFAULT_SUBDIVISION_THRESHOLD = 150
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ARG SETUP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -102,6 +104,16 @@ def main():
             extra_group,
             {'action':'store_true'},
         ),
+        (('-d','--subdivisions'), 
+            ('Max number of subdivisions allowed in each main tile.'), 
+            extra_group,
+            {'type':int, 'default':DEFAULT_SUBDIVISIONS, 'metavar':ctext('INT', 'OKBLUE')},
+        ),
+        (('-t','--subdivision_threshold'), 
+            ('Detail values higher than this threshold will create a subdivision.'), 
+            extra_group,
+            {'type':int, 'default':DEFAULT_SUBDIVISION_THRESHOLD, 'metavar':ctext('INT', 'OKBLUE')},
+        ),
         (('-h','--help'), 
             ('Print this help message.'), 
             extra_group,
@@ -150,8 +162,11 @@ def main():
 
     # parse compare scale (and tile size)
     compare_scale = args.compare_scale
-    tile_width = source_image.width // horizontal_tiles
-    tile_height = source_image.height // vertical_tiles
+    # tile size must divide evenly into subdivision width
+    subdivisions = args.subdivisions
+    sub_width = (2**subdivisions)
+    tile_width = (source_image.width // (horizontal_tiles * sub_width)) * sub_width
+    tile_height = (source_image.height // (vertical_tiles * sub_width)) * sub_width
     if 'x' in compare_scale.lower():
         # width * height integers
         w, h = compare_scale.lower().split('x')
@@ -162,6 +177,10 @@ def main():
         compare_scale = float(compare_scale)
         compare_width = int(tile_width * compare_scale)
         compare_height = int(tile_height * compare_scale)
+        # clamp default compare to a reasonable value
+        if compare_scale == DEFAULT_COMPARE:
+            compare_width = min(max(1, compare_width), MAX_DEFAULT_COMPARE_RES)
+            compare_height = min(max(1, compare_height), MAX_DEFAULT_COMPARE_RES)
     
 
     # calculate real output size (for equally sized tiles)
@@ -223,7 +242,7 @@ def main():
     # ~~~~~~~~~~~~~~~~~~~~~~~~~ Print friendly info about the current job ~~~~~~~~~~~~~~~~~~~~~~~~~
     cprint(f'Source image size: {og_width}x{og_height}', 'HEADER')
     cprint(f'{num_image_tiles} input tiles, {tile_width}x{tile_height}px each', 'HEADER')
-    cprint(f'{horizontal_tiles}x{vertical_tiles} tiles in output image, totaling {horizontal_tiles * vertical_tiles}.', 'HEADER')
+    cprint(f'{horizontal_tiles}x{vertical_tiles} tiles in output image, totaling {horizontal_tiles * vertical_tiles} (up to {horizontal_tiles*sub_width * vertical_tiles*sub_width} with subdivisions).', 'HEADER')
     cprint(f'Final output size: {output_width}x{output_height}', 'HEADER')
     cprint(f'Comparing at {compare_width}x{compare_height}px', 'HEADER')
     cprint(f'linear_weight: {linear_error_weight}, kernel_weight: {kernel_error_weight}, repeat_penalty: {repeat_penalty}', 'HEADER')
@@ -242,7 +261,9 @@ def main():
         subtle_overlay_alpha=subtle_overlay_weight,
         tile_directory=tile_directory,
         repeat_penalty=repeat_penalty,
-        subdivisions = 2,
+        detail_map=None,
+        subdivisions=subdivisions,
+        subdivision_threshold=args.subdivision_threshold,
     )
     mosaic.fit_tiles()
     mosaic.save(output_path=output_path, show_preview=show_preview)
@@ -364,14 +385,13 @@ class Scale:
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ InputTile ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # -----------------------------------------------------------------------------------------------------------------------------
 class InputTile:
-    tile_size = None
     compare_size = None
     kernel_error_weight = DEFAULT_KERNEL_WEIGHT
     linear_error_weight = DEFAULT_LINEAR_WEIGHT
     repeat_penalty = DEFAULT_REPEAT_PENALTY
 
     """A class to hold and work on input tiles"""
-    def __init__(self, img):
+    def __init__(self, img, tile_size):
         """Load one image tile, converted to proper output size"""
         if isinstance(img, Image.Image):
             self.img = img
@@ -379,7 +399,7 @@ class InputTile:
             self.img = Image.open(img)
 
         # calculate image cropped size to match tile aspect ratio
-        trgt_w, trgt_h = self._crop_from_ratio((self.img.width, self.img.height), self.tile_size)
+        trgt_w, trgt_h = self._crop_from_ratio((self.img.width, self.img.height), tile_size)
         w_delta = self.img.width - trgt_w
         h_delta = self.img.height - trgt_h
         crop = (
@@ -389,7 +409,7 @@ class InputTile:
             self.img.height - (h_delta // 2),
         )
         # crop and resize image to tile size
-        self.img = self.img.resize(self.tile_size, box=crop)
+        self.img = self.img.resize(tile_size, box=crop)
 
         # convert to Lab color space for more accurate comparisons
         try:
@@ -403,9 +423,18 @@ class InputTile:
         self.repeat_error = 0.0
 
 
-    def add_to_mosaic(self, mosaic, crop):
+    # def add_to_mosaic(self, mosaic, crop, rescale=None):
+    #     self.repeat_error += InputTile.repeat_penalty
+    #     img = self.img
+    #     if rescale is not None:
+    #         img = img.resize(rescale)
+    #     mosaic.paste(img, crop)
+    
+
+    def get_image(self, resize=None):
+        """Get the resized tile, and track usage."""
         self.repeat_error += InputTile.repeat_penalty
-        mosaic.paste(self.img, crop)
+        return self.img.resize(resize) if resize else self.img
 
 
     def compare(self, source) -> float:
@@ -466,6 +495,20 @@ class InputTile:
             h *= width_factor
         
         return Scale(int(w), int(h))
+    
+class DummyTile:
+    # TODO: refactor this into a parent class for InputTile
+    def __init__(self, img):
+        self.img = img
+
+    def get_image(self, resize=None):
+        return self.img.resize(resize) if resize else self.img
+    
+    # def add_to_mosaic(self, mosaic, crop, rescale=None):
+    #     img = self.img
+    #     if rescale is not None:
+    #         img = img.resize(rescale)
+    #     mosaic.paste(img, crop)
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Mosaic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -473,6 +516,8 @@ class InputTile:
 class Mosaic:
     "A class to hold and work on the mosaic tiles."
     subdivisions = DEFAULT_SUBDIVISIONS
+    subdivision_threshold = DEFAULT_SUBDIVISION_THRESHOLD
+    tile_size = None
     def __init__(
             self,
             source_image,
@@ -486,15 +531,22 @@ class Mosaic:
             subtle_overlay_alpha,
             tile_directory,
             repeat_penalty,
+            detail_map,
             subdivisions,
+            subdivision_threshold,
     ):
         self.source_image = source_image
-        InputTile.tile_size = tile_size
+        Mosaic.tile_size = tile_size
         InputTile.compare_size = compare_size
         self.output_size = output_size
         self.output_tiles_res = output_tiles_res
         Mosaic.subdivisions = subdivisions
+        Mosaic.subdivision_threshold = subdivision_threshold
 
+        if detail_map is None:
+            self.detail_map = self._make_detail_map()
+        else:
+            self.detail_map = self._setup_detail_map(detail_map)
 
         self.tiles = self.load_tiles(tile_directory)
 
@@ -509,6 +561,51 @@ class Mosaic:
         self.mosaic = Image.new(mode='LAB', size=tuple(self.output_size))
 
 
+    def _make_detail_map(self):
+        """
+        Create a default detail map from the source image,
+        by running edge detection on the source image, and scaling it down.
+        """
+        h_tiles, v_tiles = self.output_tiles_res
+        map_width = h_tiles * (2 ** self.subdivisions)
+        map_height = v_tiles * (2 ** self.subdivisions)
+        # generate edge map from the image (Areas with more edges are brighter)
+        edge_map = self.source_image\
+            .convert(mode="RGB")\
+            .filter(ImageFilter.FIND_EDGES)\
+            .resize((map_width, map_height))\
+            .convert(mode="L")
+        # generate a radial gradient with white in the center, black on the edges
+        vignette = ImageOps.invert(
+            Image.radial_gradient("L").resize((map_width, map_height))
+            )
+        vignette = ImageEnhance.Contrast(
+            ImageChops.overlay(vignette, vignette)
+            ).enhance(2)
+        # JUSTFORTESTING:
+        ImageEnhance.Contrast(
+            ImageOps.autocontrast(
+                ImageChops.overlay(edge_map, vignette)
+                )
+            ).enhance(2).resize((512,512), resample=Image.Resampling.NEAREST).show()
+        # combine edge map and vignette to make a center-biased edge map, as our detail map
+        return ImageEnhance.Contrast(
+            ImageOps.autocontrast(
+                ImageChops.overlay(edge_map, vignette)
+                )
+            ).enhance(2)
+
+
+    def _setup_detail_map(self, detail_map):
+        """Convert the given detail map into the expected format"""
+        h_tiles, v_tiles = self.output_tiles_res
+        map_width = h_tiles * (2 ** self.subdivisions)
+        map_height = v_tiles * (2 ** self.subdivisions)
+        return detail_map\
+            .resize((map_width, map_height))\
+            .convert(mode="L")
+
+
     def load_tiles(self, tile_directory):
         """Open, crop, and rescale tiles from tile directory"""
         tiles = []
@@ -520,12 +617,72 @@ class Mosaic:
             cwrite(f'Loading tile {tile_idx}/{num_image_tiles} ({img_file.name})...')
             # PIL will determine what images are or are not valid.
             try:
-                tiles.append(InputTile(img_file))
+                tiles.append(InputTile(img_file, self.tile_size))
             except (OSError, ValueError):
                 bad_tile_files += 1
                 cprint(f"Warning: {img_file.name} could not be loaded", "WARNING")
         cprint(f"{num_image_tiles - bad_tile_files} tiles loaded.", "OKGREEN")
         return tiles
+
+
+    def find_tile(self, tile_x, tile_y, width, height, sub=0):
+        """Find the tile for a single x/y coordinate"""
+        # start by finding detail value for this tile
+        # decide if we are subdividing based on max detail value in tile
+        subdividing = False
+        if sub < self.subdivisions:
+            detail_map_tile_width = (2**self.subdivisions) // (2**sub)
+            crop = (
+                detail_map_tile_width * tile_x,
+                detail_map_tile_width * tile_y,
+                detail_map_tile_width * tile_x + detail_map_tile_width,
+                detail_map_tile_width * tile_y + detail_map_tile_width,
+            )
+            max_detail = np.max(np.array(self.detail_map.crop(crop)))
+            if max_detail > self.subdivision_threshold:
+                subdividing = True
+        
+        if subdividing:
+            # assemble a composite tile out of sub-tiles
+            img = Image.new(mode="LAB", size=(width, height))
+            for sub_y in range(2):
+                for sub_x in range(2):
+                    sub_width, sub_height = width // 2, height // 2
+                    sub_crop = (
+                        sub_width * sub_x,
+                        sub_height * sub_y,
+                        sub_width * sub_x + sub_width,
+                        sub_height * sub_y + sub_height,
+                    )
+                    img.paste(
+                        self.find_tile(
+                            tile_x*2 + sub_x, tile_y*2 + sub_y, 
+                            sub_width, sub_height, 
+                            sub=sub+1,
+                        ).get_image(resize=(sub_width, sub_height)),
+                        box=sub_crop
+                    )
+            return DummyTile(img)
+        # else select one tile the ol'fashioned way
+
+        # crop region for comparison
+        crop = (
+            tile_x * width,
+            tile_y * height,
+            tile_x * width + width,
+            tile_y * height + height,
+        )
+        # convert to an InputTile for comparison
+        source_region = InputTile(self.source_image.crop(crop), (width, height))
+
+        # scan and find best matching tile image
+        final_errors = [tile.compare(source_region) for tile in self.tiles]
+
+        # get the first index where error was equal to the smallest error
+        # select the tile at that index
+        best_idx = final_errors.index(min(final_errors))
+        best_tile = self.tiles[best_idx]
+        return best_tile
 
 
     def fit_tiles(self):
@@ -535,7 +692,7 @@ class Mosaic:
         and add it to the mosaic.
         """
         horizontal_tiles, vertical_tiles = self.output_tiles_res
-        tile_width, tile_height = InputTile.tile_size
+        tile_width, tile_height = self.tile_size
 
         tile_ys = list(range(vertical_tiles))
         tile_xs = list(range(horizontal_tiles))
@@ -550,27 +707,22 @@ class Mosaic:
                 tile_idx += 1
                 cwrite(f"Comparing tile {tile_idx}/{total_tiles} ({tile_x}x{tile_y})...")
 
-                # find the coordinate region of this tile
-                # crop region for comparison
+                # find the tile(s) matching this x/y
+                this_tile = self.find_tile(tile_x, tile_y, tile_width, tile_height)
                 crop = (
                     tile_x * tile_width,
                     tile_y * tile_height,
                     tile_x * tile_width + tile_width,
                     tile_y * tile_height + tile_height,
                 )
-                # convert to an InputTile for comparison
-                source_region = InputTile(self.source_image.crop(crop))
+                self.mosaic.paste(
+                    this_tile.get_image(), box=crop
+                )
+                # this_tile.add_to_mosaic(self.mosaic, crop)
 
-                # scan and find best matching tile image
-                final_errors = [tile.compare(source_region) for tile in self.tiles]
-
-                # get the first index where error was equal to the smallest error
-                # select the tile at that index
-                best_idx = final_errors.index(min(final_errors))
-                best_tile = self.tiles[best_idx]
                 
-                # add the best tile to the output image
-                best_tile.add_to_mosaic(self.mosaic, crop)
+                # # add the best tile to the output image
+                # best_tile.add_to_mosaic(self.mosaic, crop)
 
         cprint(f"{total_tiles} tiles selected.", "OKGREEN")
 
@@ -593,11 +745,11 @@ class Mosaic:
         source_image = self.source_image.convert(mode="RGB")
         mosaic = self.mosaic.convert(mode="RGB")
 
-        blur_amount = min(InputTile.tile_size) // 2
+        blur_amount = min(self.tile_size) // 2
 
         # blur each tile segment of the source separately
         horizontal_tiles, vertical_tiles = self.output_tiles_res
-        tile_width, tile_height = InputTile.tile_size
+        tile_width, tile_height = self.tile_size
         for tile_x in range(horizontal_tiles):
             for tile_y in range(vertical_tiles):
 
