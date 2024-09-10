@@ -35,73 +35,72 @@ def main():
 
 
     parser = argparse.ArgumentParser(
-        prog='hd_mosaic.py',
-        description=ctext('This tool can be used to create a high-quality image mosaic by comparing given image tiles to a source image.', 'OKCYAN'),
-        epilog=f"{ctext('Example:', 'HEADER')} {ctext('python3 hd_mosaic.py ../imagetiles ../targetimg.jpg 16x8', 'OKBLUE')}",
+        description=ctext('This tool can be used to create a high-quality image mosaic by comparing given image tiles to a source image.', 'DARKBLUE'),
+        epilog=f"{ctext('Example:', 'DARKBLUE')} {ctext('python3 hd_mosaic.py ../imagetiles ../targetimg.jpg 16x8', 'GRAY')}",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         add_help=False,
     )
-    positional_group = parser.add_argument_group(title=ctext('positional', "HEADER"), description=ctext('These arguments are required.', 'OKCYAN'))
-    scale_group = parser.add_argument_group(title=ctext('scale options', "HEADER"), description=ctext('These options take a float (which is multiplied by the original scale), or two integers separated by an "x".', 'OKCYAN'))
-    weight_group = parser.add_argument_group(title=ctext('weight options', "HEADER"), description=ctext('These options take a float, and control the strength of different comparison strategies.', 'OKCYAN'))
-    overlay_group = parser.add_argument_group(title=ctext('overlay options', "HEADER"), description=ctext('These options control the strength of the target image overlaid on top of the mosaic.', 'OKCYAN'))
-    extra_group = parser.add_argument_group(title=ctext('additional options', "HEADER"), description=ctext('All other options.', 'OKCYAN'))
+    positional_group = parser.add_argument_group(title=ctext('positional', "OKBLUE"), description=ctext('These arguments are required.', 'DARKBLUE'))
+    scale_group = parser.add_argument_group(title=ctext('scale options', "OKBLUE"), description=ctext('These options take a float (which is multiplied by the original scale), or two integers separated by an "x".', 'DARKBLUE'))
+    weight_group = parser.add_argument_group(title=ctext('weight options', "OKBLUE"), description=ctext('These options take a float, and control the strength of different comparison strategies.', 'DARKBLUE'))
+    overlay_group = parser.add_argument_group(title=ctext('overlay options', "OKBLUE"), description=ctext('These options control the strength of the target image overlaid on top of the mosaic.', 'DARKBLUE'))
+    extra_group = parser.add_argument_group(title=ctext('additional options', "OKBLUE"), description=ctext('All other options.', 'DARKBLUE'))
     # I'm just using this pattern to shrink the arg creation code
     for args, help, group, kwargs in [
         (('tile_folder',), 
             ("A path to a folder of images to build the mosaic with"), 
             positional_group,
-            {'metavar':ctext(ctext('TILE_FOLDER', 'BOLD'), 'OKBLUE')},
+            {'metavar':'TILE_FOLDER'},
         ),
         (('source_image',), 
             ("A path to an image to base the mosaic on."), 
             positional_group,
-            {'metavar':ctext(ctext('SOURCE_IMAGE', 'BOLD'), 'OKBLUE')},
+            {'metavar':'SOURCE_IMAGE'},
         ),
         (('tiles',), 
             ('The number of tiles to use. (EX: "16x10" sets 16 horizontal, 10 vertical tiles. "8" sets both to 8)'), 
             positional_group,
-            {'metavar':ctext(ctext('TILES', 'BOLD'), 'OKBLUE')},
+            {'metavar':'TILES'},
         ),
         (('-o','--output'), 
             ('The path (and/or filename) to use. Default is a generated filename in the current directory.'), 
             extra_group,
-            {'metavar':ctext(ctext('PATH', 'OKBLUE'), 'OKBLUE')},
+            {'metavar':'PATH'},
         ),
         (('-s','--scale'), 
             (f'The amount to rescale the input image.'), 
             scale_group,
-            {'default':str(DEFAULT_SCALE), 'metavar':ctext('FLOAT|INTxINT', 'OKBLUE')},
+            {'default':str(DEFAULT_SCALE), 'metavar':'FLOAT|INTxINT'},
         ),
         (('-c','--compare_scale'), 
             (f'The resolution that tiles will be compared at.'), 
             scale_group,
-            {'default':str(DEFAULT_COMPARE), 'metavar':ctext('FLOAT|INTxINT', 'OKBLUE')},
+            {'default':str(DEFAULT_COMPARE), 'metavar':'FLOAT|INTxINT'},
         ),
         (('-l','--linear_error_weight'), 
             (f'How much the "linear" difference between pixels affects the output. '), 
             weight_group,
-            {'type':float, 'default':DEFAULT_LINEAR_WEIGHT, 'metavar':ctext('FLOAT', 'OKBLUE')},
+            {'type':float, 'default':DEFAULT_LINEAR_WEIGHT, 'metavar':'FLOAT'},
         ),
         (('-k','--kernel_error_weight'), 
             (f'How much the "kernel difference" comparison affects the output.'), 
             weight_group,
-            {'type':float, 'default':DEFAULT_KERNEL_WEIGHT, 'metavar':ctext('FLOAT', 'OKBLUE')},
+            {'type':float, 'default':DEFAULT_KERNEL_WEIGHT, 'metavar':'FLOAT'},
         ),
         (('-O','--overlay_opacity'), 
             (f'The alpha for a "normal" overlay of the target image over the mosaic.'), 
             overlay_group,
-            {'type':float, 'default':DEFAULT_OVERLAY, 'metavar':ctext('FLOAT', 'OKBLUE')},
+            {'type':float, 'default':DEFAULT_OVERLAY, 'metavar':'FLOAT'},
         ),
         (('-so','--subtle_overlay'), 
             (f'The alpha for an alternate, less sharp method of overlaying the target image on the mosaic.'), 
             overlay_group,
-            {'type':float, 'default':DEFAULT_SUBTLE_OVERLAY, 'metavar':ctext('FLOAT', 'OKBLUE')},
+            {'type':float, 'default':DEFAULT_SUBTLE_OVERLAY, 'metavar':'FLOAT'},
         ),
         (('-r','--repeat_penalty'), 
             (f'How much to penalize repetition when selecting tiles.'), 
             weight_group,
-            {'type':float, 'default':DEFAULT_REPEAT_PENALTY, 'metavar':ctext('FLOAT', 'OKBLUE')},
+            {'type':float, 'default':DEFAULT_REPEAT_PENALTY, 'metavar':'FLOAT'},
         ),
         (('-S','--show'), 
             ('If given, opens a preview of the output image upon completion.'), 
@@ -111,17 +110,17 @@ def main():
         (('-d','--subdivisions'), 
             ('Max number of subdivisions allowed in each main tile.'), 
             extra_group,
-            {'type':int, 'default':DEFAULT_SUBDIVISIONS, 'metavar':ctext('INT', 'OKBLUE')},
+            {'type':int, 'default':DEFAULT_SUBDIVISIONS, 'metavar':'INT'},
         ),
         (('-D','--detail_map'), 
             ('An image that controls where extra subdivisions are added.'), 
             extra_group,
-            {'metavar':ctext('PATH', 'OKBLUE')},
+            {'metavar':'PATH'},
         ),
         (('-t','--subdivision_threshold'), 
             ('Detail values higher than this threshold will create a subdivision.'), 
             extra_group,
-            {'type':int, 'default':DEFAULT_SUBDIVISION_THRESHOLD, 'metavar':ctext('INT', 'OKBLUE')},
+            {'type':int, 'default':DEFAULT_SUBDIVISION_THRESHOLD, 'metavar':'INT'},
         ),
         (('-V','--verbose'), 
             ('Print additional debug information.'), 
@@ -134,9 +133,14 @@ def main():
             {'action':'help'},
         ),
     ]:
+        if 'metavar' in kwargs:
+            if group is positional_group:
+                kwargs['metavar'] = ctext(kwargs['metavar'], 'BOLD')
+            else:
+                kwargs['metavar'] = ctext(kwargs['metavar'], 'GRAY')
         if 'default' in kwargs:
-            help += ctext(f"(default: {kwargs['default']})", 'OKBLUE')
-        group.add_argument(*args, help=ctext(help, 'OKCYAN'), **kwargs)
+            help += ctext(f"(default: {kwargs['default']})", 'GRAY')
+        group.add_argument(*args, help=ctext(help, 'DARKBLUE'), **kwargs)
     args = parser.parse_args()
     VERBOSE = args.verbose
 
@@ -303,6 +307,9 @@ class Printer:
     char_idx = 0
 
     prntclrs = {
+        'GRAY':'\033[90m',
+        'DARKBLUE':'\033[34m',
+        'DARKMAGENTA':'\033[35m',
         'HEADER':'\033[95m',
         'OKBLUE':'\033[94m',
         'OKCYAN':'\033[96m',
@@ -353,14 +360,6 @@ class Printer:
         text = f"  {self.next_char()} - {text}..."
         text = self._ensure_length(self._pad_text(text))
         print(self.ctext(text, 'OKCYAN'), end='\r')
-
-        # color = Printer.prntclrs['OKCYAN']
-        # text = f"{color}• {Printer.next_char()} - {text}{Printer.prntclrs['ENDC']}"
-        # if len(text) > len(Printer.max_line):
-        #     Printer.max_line = ' ' * len(text)
-        # else:
-        #     text = _pad_text(text, Printer.max_line)
-        # print(text, end='\r')
 
 # printer is the only way this script prints information.
 # so we'll simplify its method calls for readability:
