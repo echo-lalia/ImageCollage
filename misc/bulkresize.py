@@ -13,6 +13,10 @@ parser.add_argument(
     help="A path to a folder of images to resize in place."
     )
 parser.add_argument(
+    '-o', '--output',
+    help='The destination folder to fill with resized images.'
+)
+parser.add_argument(
     '-w', '--width', type=int,
     help='Images will be larger than this width.'
 )
@@ -47,9 +51,15 @@ if args.height is None:
 
 if args.in_place:
     out_path = args.img_folder
+elif args.output is not None:
+    out_path = args.output
 else:
-    out_path = os.path.join(os.getcwd(), f"{os.path.basename(args.img_folder)}_{args.width}x{args.height}")
+    base_dir, _ = os.path.split(args.img_folder)
+    out_path = os.path.join(base_dir, f"{os.path.basename(args.img_folder)}_{args.width}x{args.height}")
     os.makedirs(out_path, exist_ok=True)
+
+
+print(f"Output path: {out_path}")
 
 
 # this is just used to make the loading pretty:
