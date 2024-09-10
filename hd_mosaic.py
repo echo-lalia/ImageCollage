@@ -204,7 +204,7 @@ def main():
     crop = crop_from_rescale((og_width, og_height), (output_width, output_height))
     source_image = source_image.resize((output_width, output_height), box=crop)
     # convert to Lab color space for more accurate comparisons
-    source_image = source_image.convert(mode='LAB')
+    source_image = source_image.convert(mode='RGB')
 
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~ Finish setting up other input args ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -431,15 +431,11 @@ class InputTile:
         # crop and resize image to tile size
         self.img = self.img.resize(tile_size, box=crop)
 
-        # convert to Lab color space for more accurate comparisons
-        try:
-            self.img = self.img.convert(mode='LAB')
-        except:
-            # Sometimes the conversion fails due to the color mode the image loads with.
-            self.img =  self.img.convert(mode='RGB').convert(mode="LAB")
-        
-        self.linear_array = self._as_linear_array()
-        self.kernel_diff_array = self._as_kernel_diff_array()
+        self.img =  self.img.convert(mode='RGB')
+
+        compare_img = self.img.resize(self.compare_size).convert(mode="LAB")
+        self.linear_array = self._as_linear_array(compare_img)
+        self.kernel_diff_array = self._as_kernel_diff_array(compare_img)
         self.repeat_error = 0.0
     
 
@@ -457,12 +453,11 @@ class InputTile:
         return err
 
 
-    def _as_kernel_diff_array(self):
+    def _as_kernel_diff_array(self, img):
         """
         For each pixel, avg val with neighbors to determine pixel kernel,
         return array representing the differences between the pixels and the pixel kernels.
         """
-        img = self.img.resize(self.compare_size)
         arr = np.array([])
         for y in range(img.height):
             for x in range(img.width):
@@ -481,8 +476,8 @@ class InputTile:
         return arr
 
 
-    def _as_linear_array(self):
-        img = self.img.resize(self.compare_size)
+    def _as_linear_array(self, img):
+        # convert to Lab color space for more accurate comparisons
         arr = np.array(
             [img.getpixel((x,y)) for y in range(img.height) for x in range(img.width)]
             )
@@ -506,15 +501,6 @@ class InputTile:
             h *= width_factor
         
         return Scale(int(w), int(h))
-
-
-class DummyTile:
-    # TODO: refactor this into a parent class for InputTile
-    def __init__(self, img):
-        self.img = img
-
-    def get_image(self, resize=None):
-        return self.img.resize(resize) if resize else self.img
 
 
 
@@ -581,7 +567,7 @@ class Mosaic:
         self.subtle_overlay_alpha = subtle_overlay_alpha
 
         # create the blank image to create our mosaic
-        self.mosaic = Image.new(mode='LAB', size=tuple(self.output_size))
+        self.mosaic = Image.new(mode='RGB', size=tuple(self.output_size))
 
 
     def _make_detail_map(self):
@@ -662,7 +648,7 @@ class Mosaic:
         
         if subdividing:
             # assemble a composite tile out of sub-tiles
-            img = Image.new(mode="LAB", size=(width, height))
+            img = Image.new(mode="RGB", size=(width, height))
             for sub_y in range(2):
                 for sub_x in range(2):
                     sub_width, sub_height = width // 2, height // 2
@@ -677,10 +663,10 @@ class Mosaic:
                             tile_x*2 + sub_x, tile_y*2 + sub_y, 
                             sub_width, sub_height, 
                             sub=sub+1,
-                        ).get_image(resize=(sub_width, sub_height)),
+                        ),
                         box=sub_crop
                     )
-            return DummyTile(img)
+            return img
         # else select one tile the ol'fashioned way
 
         # crop region for comparison
@@ -708,7 +694,7 @@ class Mosaic:
         # select the tile at that index
         best_idx = final_errors.index(min(final_errors))
         best_tile = self.tiles[best_idx]
-        return best_tile
+        return self.add_subtle_overlay(best_tile.get_image(resize=(width, height)), source_region.img)
 
 
     def fit_tiles(self):
@@ -742,8 +728,11 @@ class Mosaic:
                     tile_y * tile_height + tile_height,
                 )
                 self.mosaic.paste(
-                    this_tile.get_image(), box=crop
+                    this_tile, box=crop
                 )
+                # self.mosaic.paste(
+                #     this_tile.get_image(), box=crop
+                # )
 
 
         cprint(f"{total_tiles} tiles selected.", "OKGREEN")
@@ -751,10 +740,6 @@ class Mosaic:
         if self.overlay_alpha:
             cprint('Applying overlay...', 'OKBLUE')
             self.mosaic = self.add_normal_overlay()
-        
-        if self.subtle_overlay_alpha:
-            cprint('Applying subtle overlay...', 'OKBLUE')
-            self.mosaic = self.add_subtle_overlay()
         
         if VERBOSE:
             cprint(f'Smallest error: {self.min_error}, largest error: {self.max_error}', color="UNDERLINE")
@@ -764,32 +749,17 @@ class Mosaic:
         overlay_img = ImageChops.overlay(self.mosaic, self.source_image)
         return ImageChops.blend(self.mosaic, overlay_img, self.overlay_alpha)
 
-
-    def add_subtle_overlay(self):
-        """Soften edges on target image, and blur the image withing each tile, before applying the overlay."""
-        source_image = self.source_image.convert(mode="RGB")
-        mosaic = self.mosaic.convert(mode="RGB")
-
-        blur_amount = min(self.tile_size) // 2
-
-        # blur each tile segment of the source separately
-        horizontal_tiles, vertical_tiles = self.output_tiles_res
-        tile_width, tile_height = self.tile_size
-        for tile_x in range(horizontal_tiles):
-            for tile_y in range(vertical_tiles):
-
-                crop = (
-                    tile_x * tile_width,
-                    tile_y * tile_height,
-                    tile_x * tile_width + tile_width,
-                    tile_y * tile_height + tile_height,
-                )
-                overlay_region = source_image.crop(crop)
-                overlay_region = overlay_region.filter(ImageFilter.BoxBlur(blur_amount))
-                source_image.paste(overlay_region, crop)
-
-        source_image = ImageChops.overlay(mosaic, source_image)
-        return ImageChops.blend(mosaic, source_image, self.subtle_overlay_alpha)
+    def add_subtle_overlay(self, tile, source_tile):
+        if not self.subtle_overlay_alpha:
+            return tile
+        return ImageChops.blend(
+            tile, 
+            ImageChops.overlay(
+                tile,
+                source_tile.filter(ImageFilter.GaussianBlur(max(tile.width, tile.height) // 2))
+                ), 
+            self.subtle_overlay_alpha,
+            )
 
 
     def save(self, show_preview, output_path):
@@ -799,7 +769,7 @@ class Mosaic:
             self.mosaic.show()
 
         cprint('Saving img...', "OKBLUE")
-        self.mosaic = self.mosaic.convert(mode="RGB")
+        # self.mosaic = self.mosaic.convert(mode="RGB")
         self.mosaic.save(output_path)
         cprint(f'Saved as "{output_path}"', 'OKGREEN')
 
