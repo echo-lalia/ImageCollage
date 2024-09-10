@@ -451,6 +451,7 @@ class InputTile:
 
         # calculate image cropped size to match tile aspect ratio
         trgt_w, trgt_h = self._crop_from_ratio((self.img.width, self.img.height), tile_size)
+
         w_delta = self.img.width - trgt_w
         h_delta = self.img.height - trgt_h
         crop = (
@@ -459,8 +460,13 @@ class InputTile:
             self.img.width - (w_delta // 2),
             self.img.height - (h_delta // 2),
         )
-        # crop and resize image to tile size
-        self.img = self.img.resize(tile_size, box=crop)
+
+         # ONLY resize when the new size is smaller than the og size
+        if tile_size.w <= self.img.width and tile_size.h <= self.img.height:
+            # crop and resize image to tile size
+            self.img = self.img.resize(tile_size, box=crop)
+        else:
+            self.img = self.img.crop(crop)
 
         self.img =  self.img.convert(mode='RGB')
 
@@ -468,7 +474,7 @@ class InputTile:
         self.linear_array = self._as_linear_array(compare_img)
         self.kernel_diff_array = self._as_kernel_diff_array(compare_img)
         self.repeat_error = 0.0
-    
+
 
     def get_image(self, resize=None):
         """Get the resized tile, and track usage."""
@@ -708,7 +714,7 @@ class Mosaic:
             tile_y * height + height,
         )
         # convert to an InputTile for comparison
-        source_region = InputTile(self.source_image.crop(crop), (width, height))
+        source_region = InputTile(self.source_image.crop(crop), Scale(width, height))
 
         # scan and find best matching tile image
         final_errors = [tile.compare(source_region) for tile in self.tiles]
