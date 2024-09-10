@@ -13,7 +13,7 @@ MAX_DEFAULT_COMPARE_RES = 9
 DEFAULT_LINEAR_WEIGHT = 1.0
 DEFAULT_KERNEL_WEIGHT = 0.1
 DEFAULT_OVERLAY = 0.0
-DEFAULT_SUBTLE_OVERLAY = 0.3
+DEFAULT_SUBTLE_OVERLAY = 0.5
 DEFAULT_REPEAT_PENALTY = 0.1
 DEFAULT_SUBDIVISIONS = 1
 DEFAULT_SUBDIVISION_THRESHOLD = 150
@@ -111,6 +111,11 @@ def main():
             ('Max number of subdivisions allowed in each main tile.'), 
             extra_group,
             {'type':int, 'default':DEFAULT_SUBDIVISIONS, 'metavar':ctext('INT', 'OKBLUE')},
+        ),
+        (('-D','--detail_map'), 
+            ('An image that controls where extra subdivisions are added.'), 
+            extra_group,
+            {'metavar':ctext('PATH', 'OKBLUE')},
         ),
         (('-t','--subdivision_threshold'), 
             ('Detail values higher than this threshold will create a subdivision.'), 
@@ -247,6 +252,11 @@ def main():
 
     show_preview = args.show
 
+    if args.detail_map:
+        detail_map = Image.open(args.detail_map)
+    else:
+        detail_map = None
+
     # ~~~~~~~~~~~~~~~~~~~~~~~~~ Print friendly info about the current job ~~~~~~~~~~~~~~~~~~~~~~~~~
     cprint(f'Source image size: {og_width}x{og_height}', 'HEADER')
     cprint(f'{num_image_tiles} input tiles, {tile_width}x{tile_height}px each', 'HEADER')
@@ -269,7 +279,7 @@ def main():
         subtle_overlay_alpha=subtle_overlay_weight,
         tile_directory=tile_directory,
         repeat_penalty=repeat_penalty,
-        detail_map=None,
+        detail_map=detail_map,
         subdivisions=subdivisions,
         subdivision_threshold=args.subdivision_threshold,
     )
