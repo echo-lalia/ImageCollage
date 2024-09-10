@@ -3,6 +3,7 @@ from PIL import Image, ImageOps, ImageChops, ImageFilter, ImageEnhance
 import numpy as np
 import argparse
 import random
+import shutil
 import time
 import os
 
@@ -295,9 +296,10 @@ def main():
 # -----------------------------------------------------------------------------------------------------------------------------
 class Printer:
     """Simple helper for printing progress text."""
-    max_line = ''
-    load_chars = ["⢿", "⣻", "⣽", "⣾", "⣷", "⣯", "⣟", "⡿"]
+    last_line_len = 0
+    max_line_len = 0
 
+    load_chars = ["⢿", "⣻", "⣽", "⣾", "⣷", "⣯", "⣟", "⡿"]
     char_idx = 0
 
     prntclrs = {
@@ -316,43 +318,63 @@ class Printer:
         """Get the next loading character"""
         self.char_idx = (self.char_idx + 1) % len(self.load_chars)
         return self.load_chars[self.char_idx]
+
+    def _pad_text(self, text:str) -> str:
+        newtext = \
+            f"{text}{' ' * (self.last_line_len - len(text))}" \
+            if len(text) < self.last_line_len \
+            else text
+        self.last_line_len = len(text)
+        return newtext
+
+    def update_text_len(self):
+        self.max_line_len = shutil.get_terminal_size().columns
+
+    def _ensure_length(self, text:str) -> str:
+        """Prevent text len from being too long."""
+        if len(text) > self.max_line_len:
+            return f"{text[:self.max_line_len-3]}..."
+        return text
+
+    @staticmethod
+    def ctext(text:str, color:str) -> str:
+        """Generate a colored string and return it."""
+        color = Printer.prntclrs.get(color.upper(), "ENDC")
+        return f"{color}{text}{Printer.prntclrs['ENDC']}"
+
+    def cprint(self, text:str, color:str):
+        """Print in color (and pad lines to erase old text)"""
+        text = self._pad_text(str(text))
+        print(self.ctext(text, color))
+
+    def write_progress(self, text):
+        """Write status to the terminal without starting a new line, erasing old text."""
+
+        text = f"  {self.next_char()} - {text}..."
+        text = self._ensure_length(self._pad_text(text))
+        print(self.ctext(text, 'OKCYAN'), end='\r')
+
+        # color = Printer.prntclrs['OKCYAN']
+        # text = f"{color}• {Printer.next_char()} - {text}{Printer.prntclrs['ENDC']}"
+        # if len(text) > len(Printer.max_line):
+        #     Printer.max_line = ' ' * len(text)
+        # else:
+        #     text = _pad_text(text, Printer.max_line)
+        # print(text, end='\r')
+
+# printer is the only way this script prints information.
+# so we'll simplify its method calls for readability:
 Printer = Printer()
+Printer.update_text_len()
+cprint = Printer.cprint
+ctext = Printer.ctext
+cwrite = Printer.write_progress
 
 
-def _pad_text(text, padding):
-    return text + padding[len(text):]
 
 
-def ctext(text, color) -> str:
-    """Generate a colored string and return it."""
-    if color.upper() in Printer.prntclrs:
-        color = Printer.prntclrs[color.upper()]
-    else:
-        color = Printer.prntclrs['ENDC']
-    return f"{color}{text}{Printer.prntclrs['ENDC']}"
 
 
-def cprint(text, color):
-    """Print in color (and pad lines to erase old text)"""
-    text = str(text)
-    if color.upper() in Printer.prntclrs:
-        color = Printer.prntclrs[color.upper()]
-    else:
-        color = Printer.prntclrs['ENDC']
-    text = _pad_text(text, Printer.max_line)
-    print(f"{color}{text}{Printer.prntclrs['ENDC']}")
-
-
-def cwrite(text):
-    """Write to the terminal without starting a new line, erasing old text."""
-    text = str(text)
-    color = Printer.prntclrs['OKCYAN']
-    text = f"{color}• {Printer.next_char()} - {text}{Printer.prntclrs['ENDC']}"
-    if len(text) > len(Printer.max_line):
-        Printer.max_line = ' ' * len(text)
-    else:
-        text = _pad_text(text, Printer.max_line)
-    print(text, end='\r')
 
 
 
@@ -628,7 +650,7 @@ class Mosaic:
         num_image_tiles = len(os.listdir(tile_directory))
         for img_file in os.scandir(tile_directory):
             tile_idx += 1
-            cwrite(f'Loading tile {tile_idx}/{num_image_tiles} ({img_file.name})...')
+            cwrite(f'Loading tile {tile_idx}/{num_image_tiles} ({img_file.name})')
             # PIL will determine what images are or are not valid.
             try:
                 tiles.append(InputTile(img_file, self.tile_size))
@@ -727,7 +749,7 @@ class Mosaic:
             for tile_x in tile_xs:
 
                 tile_idx += 1
-                cwrite(f"Comparing tile {tile_idx}/{total_tiles} ({tile_x}x{tile_y})...")
+                cwrite(f"Comparing tile {tile_idx}/{total_tiles} ({tile_x}x{tile_y})")
 
                 # find the tile(s) matching this x/y
                 this_tile = self.find_tile(tile_x, tile_y, tile_width, tile_height)
