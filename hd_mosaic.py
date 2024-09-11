@@ -10,8 +10,7 @@ import os
 
 
 DEFAULT_SCALE = 1.0
-DEFAULT_COMPARE = 0.1
-MAX_DEFAULT_COMPARE_RES = 9
+DEFAULT_COMPARE = '3x3'
 DEFAULT_LINEAR_WEIGHT = 1.0
 DEFAULT_KERNEL_WEIGHT = 0.1
 DEFAULT_OVERLAY = 0.0
@@ -21,6 +20,7 @@ DEFAULT_SUBDIVISIONS = 1
 DEFAULT_SUBDIVISION_THRESHOLD = 150
 
 VERBOSE = False
+SHOW_PREVIEW = False
 USER_INPUT = None
 
 
@@ -37,15 +37,24 @@ class InputParameter:
             metavar=None,
             default=None,
             static=False,
+            allow_none=False,
             ):
         self.name = name
         self.help = help
         self.prompt = f"{name}: {help}" if prompt is None else prompt
         self.type = type
         self.metavar = metavar
-        self.default = default
-        self.value = default
+        self.default = default if default is None else type(default)
+        self.value = default if default is None else type(default)
         self.static = static
+        self.allow_none=allow_none
+    
+    def set_val(self, val):
+        if val is None and self.allow_none:
+            self.value = val
+        else:
+            self.value = self.type(val)
+
     
     def prompt_string(self, add_in=None):
         string = f"\n\n{ctext(ctext(self.name, "HEADER"), "BOLD")} : {ctext(self.metavar, "GRAY")}"
@@ -55,9 +64,11 @@ class InputParameter:
             string += ctext(f" (default: {self.default})", "GRAY")
         string += ctext(f"\n{self.help}", 'gray')
         string += ctext(f"\n\n{self.prompt}", "OKBLUE")
-        if add_in is not None:
+        if add_in:
             string += f"\n\n{add_in}"
-        string += ctext(f"\n\n{self.name} = ", "HEADER")
+        else:
+            string += "\n\n"
+        string += ctext(f"\n{self.name} = ", "HEADER")
         return string
 
 
@@ -133,8 +144,7 @@ class UserInput:
 
                 inpt = input(param.prompt_string(add_in=add_in))
                 inpt = self.pre_process_input(inpt)
-
-                param.value = param.type(inpt)
+                param.set_val(inpt)
                 return ctext(f"Set {param.name} to {param.value}.", 'OKGREEN')
             except (ValueError) as e:
                 add_in = ctext(getattr(e, 'message', str(e)), 'WARNING')
@@ -163,9 +173,6 @@ class UserInput:
         # print the menu options
         self._clear_screen()
 
-        if ex_txt:
-            print(f"{ex_txt}\n")
-
         cprint(self.name, "OKBLUE")
         cprint("\nActions:", "GRAY")
 
@@ -173,22 +180,23 @@ class UserInput:
             name, action = items
             print(f"{ctext(str(idx), "HEADER")}:  {ctext(name, "OKCYAN")} {ctext(f'- {action.description}', "GRAY")}")
 
-        cprint("\n\nOptions:", "GRAY")
+        cprint("\nOptions:", "GRAY")
 
         for idx, item in enumerate(self.categories.items(), start=len(self.actions)):
             category, vals = item
             desc = vals['desc']
             print(f"{ctext(str(idx), "HEADER")}: {ctext(category, "HEADER")} {ctext(f'- {desc}', "GRAY")}")
         
-        cprint("\n\nSelect an action or option category:", "GRAY")
+        if ex_txt:
+            print('\n' + ex_txt)
+        else:
+            print('\n')
+        cprint("Select an action or option category:", "GRAY")
 
 
     def _print_category_menu(self, category, ex_txt=None):
         # print the menu options
         self._clear_screen()
-        
-        if ex_txt:
-            print(f"{ex_txt}\n")
 
         desc = self.categories[category]['desc']
         params = self.categories[category]['params']
@@ -201,7 +209,11 @@ class UserInput:
         for idx, param in enumerate(params):
             print(f"{ctext(str(idx), "HEADER")}{ctext(':', 'GRAY')}{ctext(param, "HEADER")}{ctext(' = ', 'GRAY')}{ctext(repr(self[param].value), 'DARKBLUE')}{ctext(f' - {self[param].help}', "GRAY")}")
         
-        cprint("\n\nSelect an option:", "GRAY")
+        if ex_txt:
+            print('\n' + ex_txt)
+        else:
+            print('\n')
+        cprint("Select an option:", "GRAY")
 
 
     def category_menu(self, category):
@@ -213,6 +225,7 @@ class UserInput:
             # keep running the menu until back is given
             self._print_category_menu(category, ex_txt=ex_txt)
             choice = self.pre_process_input(input())
+            choice = self.filter_choice(choice, params)
             if choice in ("back", "..", "-"):
                 return
             elif choice in params:
@@ -229,25 +242,32 @@ class UserInput:
         ex_txt = None
         actions = list(self.actions.keys())
         categories = list(self.categories.keys())
+        all_options = actions + categories
         while True:
             self._print_main_menu(ex_txt=ex_txt)
             choice = self.pre_process_input(input())
+            choice = self.filter_choice(choice, all_options)
             if choice in self.actions:
-                self.actions[choice].callback()
-                ex_txt = None
+                ex_txt = self.actions[choice].callback()
             elif choice in self.categories:
                 self.category_menu(choice)
                 ex_txt = None
-            elif choice.isnumeric() and int(choice) < len(actions):
-                action = actions[int(choice)]
-                self.actions[action].callback()
-                ex_txt = None
-            elif choice.isnumeric() and int(choice) < (len(actions) + len(categories)):
-                category = categories[int(choice) - len(actions)]
-                self.category_menu(category)
-                ex_txt = None
             else:
                 ex_txt = ctext(f"'{choice}' isn't a valid choice.", "WARNING")
+    
+
+    def filter_choice(self, choice:str, options:list) -> str:
+        """Try fitting choice to option, so user input doesn't need to be so specific."""
+        if choice in options:
+            return choice
+        if choice.isnumeric() and int(choice) < len(options):
+            return options[int(choice)]
+        # finally, try fuzzy matching choice to options
+        options = [opt for opt in options if opt.lower().startswith(choice.lower())]
+        print(options)
+        if len(options) == 1:
+            return options[0]
+        return choice
 
 
 
@@ -255,20 +275,29 @@ class UserInput:
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ARG SETUP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # -----------------------------------------------------------------------------------------------------------------------------
 def main():
-    global VERBOSE, USER_INPUT
+    global VERBOSE, USER_INPUT, SHOW_PREVIEW
+
+    # argparser for verbose and help messages
+    parser = argparse.ArgumentParser(
+        description=ctext('This tool can be used to create a high-quality image mosaic by comparing given image tiles to a source image.', 'DARKBLUE'),
+    )
+    parser.add_argument('-v', '--verbose', action='store_true')
+    args = parser.parse_args()
+    VERBOSE = args.verbose
+
+    # interactive input stuff:
     USER_INPUT = ui = UserInput("hd_mosaic")
 
-    ui.add_category("input/output", "Options for the input/output of images")
+    ui.add_category("input/output", "Options for the input/output images")
     ui.add_category("tiles", "Options relating to the tiles")
     ui.add_category("weights", "Weights to use for different comparison methods")
-    ui.add_category("tiles", "Options relating to the tiles")
     ui.add_category("overlay", "Options relating to the image overlay")
     ui.add_category("subdivision", "Options relating to the tile subdivision")
     ui.add_category("other", "Uncategorized options")
 
 
     ui.add_parameter(
-        "tile_folder", category="input/output", 
+        "tile_folder", category="tiles", 
         help="The source folder containing all the image tiles.",
         prompt="Please provide the path to a folder of images to use as tiles:",
         metavar="PATH", static=True, 
@@ -277,7 +306,7 @@ def main():
         "tile_resolution", category="tiles", 
         help="The resolution to load the tiles in with.", 
         prompt="""Please provide the resolution you would like to load the tiles in with: 
-(Really small resolutions will look bad, really big resolutions will be very slow)""",
+(Really small resolutions will look bad, really big resolutions will be very slow. A sensible starting point might be 128x128)""",
         metavar="INT|INTxINT", type=InputScale, static=True,
         )
     ui.add_parameter(
@@ -292,11 +321,77 @@ def main():
         prompt="Provide the path to an image to base this mosaic on:",
         metavar="PATH",
         )
-    
+    ui.add_parameter(
+        "input_rescale", category="input/output",
+        help="Multiplier to rescale source image by.",
+        prompt="Enter a rescale amount for the source_image:",
+        metavar="FLOAT", default=DEFAULT_SCALE, type=float,
+    )
+    ui.add_parameter(
+        "compare_scale", category="tiles",
+        help="The resolution that tiles will be compared at.",
+        prompt="Enter a new compare scale:",
+        metavar="INT|INTxINT", default=DEFAULT_COMPARE, type=InputScale,
+    )
+    ui.add_parameter(
+        "linear_error_weight", category="weights",
+        help="How much the 'linear' comparison affects the output.",
+        prompt="Enter a new linear weight:",
+        metavar="FLOAT", default=DEFAULT_LINEAR_WEIGHT, type=float,
+    )
+    ui.add_parameter(
+        "kernel_error_weight", category="weights",
+        help="How much the 'kernel difference' comparion affects the output.",
+        prompt="Enter a new linear weight:",
+        metavar="FLOAT", default=DEFAULT_KERNEL_WEIGHT, type=float,
+    )
+    ui.add_parameter(
+        "overlay_opacity", category="overlay",
+        help="The alpha for a 'normal' overlay of the target image over the mosaic.",
+        prompt="Enter a new overlay alpha:",
+        metavar="FLOAT", default=DEFAULT_OVERLAY, type=float,
+    )
+    ui.add_parameter(
+        "subtle_overlay", category="overlay",
+        help="The alpha for an alternate, less sharp method of overlaying the target image on the mosaic.",
+        prompt="Enter a new subtle overlay alpha:",
+        metavar="FLOAT", default=DEFAULT_SUBTLE_OVERLAY, type=float,
+    )
+    ui.add_parameter(
+        "repeat_penalty", category="weights",
+        help="How much to penalize repetition when selecting tiles.",
+        prompt="Enter a new repetition penalty:",
+        metavar="FLOAT", default=DEFAULT_REPEAT_PENALTY, type=float,
+    )
+    ui.add_parameter(
+        "show", category="other",
+        help="If True, opens a preview of the output image upon completion.",
+        prompt="Enter True or False to enable/disable 'show':",
+        metavar="BOOL", default=False, type=bool,
+    )
+    ui.add_parameter(
+        "subdivisions", category="subdivision",
+        help="Max number of subdivisions allowed in each main tile.",
+        prompt="Enter the new number of subdivisions:",
+        metavar="INT", default=DEFAULT_SUBDIVISIONS, type=int,
+    )
+    ui.add_parameter(
+        "subdivision_threshold", category="subdivision",
+        help="Detail values higher than this threshold will create a subdivision.",
+        prompt="Enter a new subdiv theshold:",
+        metavar="INT", default=DEFAULT_SUBDIVISION_THRESHOLD, type=int,
+    )
+    ui.add_parameter(
+        "detail_map", category="subdivision",
+        help="An image that controls where extra subdivisions are added.",
+        prompt="Enter the new number of subdivisions:",
+        metavar="PATH", allow_none=True,
+    )
+
+
     ui.add_action("TEST", "Dummy action", lambda: print("Testing..."))
 
     #TESTING
-    ui.main_menu()
 
     ui.get_static()
 
@@ -723,6 +818,8 @@ class InputScale(Scale):
                 width = height = int(text)
         except ValueError:
             raise ValueError(f"'{intext}' can't be interpreted as a scale. (Expected format is 'INT' or 'INTxINT')")
+        if width == 0 or height == 0:
+            raise ValueError(f"{width}x{height} is too small. Values smaller than 1 are impossible.")
         super().__init__(width, height)
             
 
@@ -841,9 +938,7 @@ class InputTile:
 # -----------------------------------------------------------------------------------------------------------------------------
 class Mosaic:
     "A class to hold and work on the mosaic tiles."
-    subdivisions = DEFAULT_SUBDIVISIONS
-    subdivision_threshold = DEFAULT_SUBDIVISION_THRESHOLD
-    tile_size = None
+    tile_load_size = None
 
     # debug stuff
     min_error = 100.0
@@ -852,55 +947,92 @@ class Mosaic:
 
     def __init__(
             self,
-            source_image,
-            tile_size,
-            compare_size,
-            output_size,
-            output_tiles_res,
-            linear_error_weight,
-            kernel_error_weight,
-            overlay_alpha,
-            subtle_overlay_alpha,
+            tile_load_size,
             tile_directory,
             repeat_penalty,
             detail_map,
             subdivisions,
             subdivision_threshold,
     ):
-        self.source_image = source_image
-        Mosaic.tile_size = tile_size
-        InputTile.compare_size = compare_size
-        self.output_size = output_size
-        self.output_tiles_res = output_tiles_res
-        Mosaic.subdivisions = subdivisions
-        Mosaic.subdivision_threshold = subdivision_threshold
+        self.tile_load_size = tile_load_size
+        self.tile_size = None
+        self.source_image = None
+        self.compare_size = None
+        self.output_size = None
+        self.output_tiles_res = None
+        self.linear_error_weight = None
+        self.kernel_error_weight = None
+        self.overlay_alpha = None
+        self.subtle_overlay_alpha = None
+        self.repeat_penalty = None
+        self.detail_map = None
+        self.auto_detail_map = True
+        self.subdivisions = None
+        self.subdivision_threshold = None
+
+        self.tiles = []
+        if VERBOSE:
+            timer = DebugTimer("Load Tiles")
+
+        self.load_tiles(tile_directory)
 
         if VERBOSE:
-            timer = DebugTimer("Setup detail map")
+            timer.print()
 
-        if detail_map is None:
-            self.detail_map = self._make_detail_map()
-        else:
+
+    def config(
+            self,
+            source_image=None,
+            compare_size=None,
+            output_tiles_res=None,
+            subdivisions=None,
+            subdivision_threshold=None,
+            detail_map=None,
+            linear_error_weight=None,
+            kernel_error_weight=None,
+            repeat_penalty=None,
+            overlay_alpha=None,
+            subtle_overlay_alpha=None,
+        ):
+
+        if source_image:
+            self.source_image = Image.open(source_image)
+        if compare_size:
+            InputTile.compare_size = compare_size
+        if output_tiles_res:
+            self.output_tiles_res = output_tiles_res
+        if subdivisions is not None:
+            self.subdivisions = subdivisions
+        if subdivision_threshold is not None:
+            self.subdivision_threshold = subdivision_threshold
+        if linear_error_weight is not None:
+            self.linear_error_weight = linear_error_weight
+        if kernel_error_weight is not None:
+            self.kernel_error_weight = kernel_error_weight
+        if repeat_penalty is not None:
+            self.repeat_penalty = repeat_penalty
+        if overlay_alpha is not None:
+            self.overlay_alpha = overlay_alpha
+        if subtle_overlay_alpha is not None:
+            self.subtle_overlay_alpha = subtle_overlay_alpha
+
+
+        if source_image or output_tiles_res or subdivisions:
+            self._setup_source()
+
+            # create the blank image to create our mosaic
+            self.mosaic = Image.new(mode='RGB', size=tuple(self.output_size))
+
+            if self.auto_detail_map and detail_map is None:
+                self.detail_map = self._make_detail_map()
+
+
+        if detail_map is not None:
+            self.auto_detail_map = False
             self.detail_map = self._setup_detail_map(detail_map)
-        
-        if VERBOSE:
-            timer.print()
-            timer = DebugTimer("Load tiles")
 
-        self.tiles = self.load_tiles(tile_directory)
-
-        if VERBOSE:
-            timer.print()
-
-        InputTile.linear_error_weight = linear_error_weight
-        InputTile.kernel_error_weight = kernel_error_weight
-        InputTile.repeat_penalty = repeat_penalty
-
-        self.overlay_alpha = overlay_alpha
-        self.subtle_overlay_alpha = subtle_overlay_alpha
-
-        # create the blank image to create our mosaic
-        self.mosaic = Image.new(mode='RGB', size=tuple(self.output_size))
+    def _setup_source(self):
+        """Setup default out file and adjusted image scales"""
 
 
     def _make_detail_map(self):
