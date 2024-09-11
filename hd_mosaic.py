@@ -5,6 +5,7 @@ import argparse
 import random
 import shutil
 import time
+import sys
 import os
 
 
@@ -20,277 +21,417 @@ DEFAULT_SUBDIVISIONS = 1
 DEFAULT_SUBDIVISION_THRESHOLD = 150
 
 VERBOSE = False
+USER_INPUT = None
+
+
+
+
+class InputParameter:
+    """This class stores information about an input parameter"""
+    def __init__(
+            self,
+            name,
+            help="",
+            type=str,
+            prompt=None,
+            metavar=None,
+            default=None,
+            static=False,
+            ):
+        self.name = name
+        self.help = help
+        self.prompt = f"{name}: {help}" if prompt is None else prompt
+        self.type = type
+        self.metavar = metavar
+        self.default = default
+        self.value = default
+        self.static = static
+    
+    def prompt_string(self, add_in=None):
+        string = f"\n\n{ctext(ctext(self.name, "HEADER"), "BOLD")} : {ctext(self.metavar, "GRAY")}"
+        if self.value is not None:
+            string += f" = {ctext(str(self.value), 'GRAY')}"
+        if self.default is not None:
+            string += ctext(f" (default: {self.default})", "GRAY")
+        string += ctext(f"\n{self.help}", 'gray')
+        string += ctext(f"\n\n{self.prompt}", "OKBLUE")
+        if add_in is not None:
+            string += f"\n\n{add_in}"
+        string += ctext(f"\n\n{self.name} = ", "HEADER")
+        return string
+
+
+
+
+class UserInput:
+    """This class is designed to get input variables from the user, using both argparse and input."""
+    def __init__(self):
+        self.categories = {"":{"desc":"", "params":[]}}
+        self.params = {}
+
+    def __getitem__(self, key):
+        return self.params[key]
+
+    def add_category(self, category, description):
+        self.categories[category] = {"desc":description, "params":[]}
+
+    def add_parameter(
+            self,
+            name,
+            category="",
+            **kwargs,
+    ):
+        param = InputParameter(name, **kwargs)
+        self.categories[category]["params"].append(name)
+        self.params[name] = param
+
+    def get_param(self, name, prev_message=""):
+        param = self[name]
+
+        add_in = None
+
+        # get user input for this param, and set it
+        # if there is an error, print it nicely and keep trying:
+        while True:
+            try:
+                # clear screen
+                size = shutil.get_terminal_size()
+                for _ in range(size.lines):
+                    print()
+
+                print(prev_message)
+
+                inpt = input(param.prompt_string(add_in=add_in))
+                if inpt == "exit":
+                    sys.exit()
+                param.value = param.type(inpt)
+                return ctext(f"Set {param.name} to {param.value}.", 'OKGREEN')
+            except (ValueError) as e:
+                add_in = ctext(getattr(e, 'message', str(e)), 'WARNING')
+
+    def get_static(self):
+        """Fill the static parameters"""
+        prev_message = ""
+        for name, param in self.params.items():
+            if param.static:
+                prev_message = self.get_param(name, prev_message=prev_message)
+        if prev_message:
+            print(prev_message)
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ARG SETUP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # -----------------------------------------------------------------------------------------------------------------------------
-
 def main():
-    global \
-        show_preview, output_path, subtle_overlay_weight, overlay_weight, repeat_penalty, \
-        kernel_error_weight, linear_error_weight, tile_directory, \
-        tile_width, tile_height, compare_width, compare_height, \
-        horizontal_tiles, vertical_tiles, source_image, \
-        output_width, output_height, num_image_tiles, VERBOSE
+    global VERBOSE, USER_INPUT
+    USER_INPUT = ui = UserInput()
+
+    ui.add_category("input/output", "Options for the input/output of images")
+    ui.add_category("tiles", "Options relating to the tiles")
+    ui.add_category("weights", "Weights to use for different comparison methods")
+    ui.add_category("tiles", "Options relating to the tiles")
+    ui.add_category("overlay", "Options relating to the image overlay")
+    ui.add_category("subdivision", "Options relating to the tile subdivision")
+    ui.add_category("other", "Uncategorized options")
 
 
-    parser = argparse.ArgumentParser(
-        description=ctext('This tool can be used to create a high-quality image mosaic by comparing given image tiles to a source image.', 'DARKBLUE'),
-        epilog=f"{ctext('Example:', 'DARKBLUE')} {ctext('python3 hd_mosaic.py ../imagetiles ../targetimg.jpg 16x8', 'GRAY')}",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        add_help=False,
-    )
-    positional_group = parser.add_argument_group(title=ctext('positional', "OKBLUE"), description=ctext('These arguments are required.', 'DARKBLUE'))
-    scale_group = parser.add_argument_group(title=ctext('scale options', "OKBLUE"), description=ctext('These options take a float (which is multiplied by the original scale), or two integers separated by an "x".', 'DARKBLUE'))
-    weight_group = parser.add_argument_group(title=ctext('weight options', "OKBLUE"), description=ctext('These options take a float, and control the strength of different comparison strategies.', 'DARKBLUE'))
-    overlay_group = parser.add_argument_group(title=ctext('overlay options', "OKBLUE"), description=ctext('These options control the strength of the target image overlaid on top of the mosaic.', 'DARKBLUE'))
-    extra_group = parser.add_argument_group(title=ctext('additional options', "OKBLUE"), description=ctext('All other options.', 'DARKBLUE'))
-    # I'm just using this pattern to shrink the arg creation code
-    for args, help, group, kwargs in [
-        (('tile_folder',), 
-            ("A path to a folder of images to build the mosaic with"), 
-            positional_group,
-            {'metavar':'TILE_FOLDER'},
-        ),
-        (('source_image',), 
-            ("A path to an image to base the mosaic on."), 
-            positional_group,
-            {'metavar':'SOURCE_IMAGE'},
-        ),
-        (('tiles',), 
-            ('The number of tiles to use. (EX: "16x10" sets 16 horizontal, 10 vertical tiles. "8" sets both to 8)'), 
-            positional_group,
-            {'metavar':'TILES'},
-        ),
-        (('-o','--output'), 
-            ('The path (and/or filename) to use. Default is a generated filename in the current directory.'), 
-            extra_group,
-            {'metavar':'PATH'},
-        ),
-        (('-s','--scale'), 
-            (f'The amount to rescale the input image.'), 
-            scale_group,
-            {'default':str(DEFAULT_SCALE), 'metavar':'FLOAT|INTxINT'},
-        ),
-        (('-c','--compare_scale'), 
-            (f'The resolution that tiles will be compared at.'), 
-            scale_group,
-            {'default':str(DEFAULT_COMPARE), 'metavar':'FLOAT|INTxINT'},
-        ),
-        (('-l','--linear_error_weight'), 
-            (f'How much the "linear" difference between pixels affects the output. '), 
-            weight_group,
-            {'type':float, 'default':DEFAULT_LINEAR_WEIGHT, 'metavar':'FLOAT'},
-        ),
-        (('-k','--kernel_error_weight'), 
-            (f'How much the "kernel difference" comparison affects the output.'), 
-            weight_group,
-            {'type':float, 'default':DEFAULT_KERNEL_WEIGHT, 'metavar':'FLOAT'},
-        ),
-        (('-O','--overlay_opacity'), 
-            (f'The alpha for a "normal" overlay of the target image over the mosaic.'), 
-            overlay_group,
-            {'type':float, 'default':DEFAULT_OVERLAY, 'metavar':'FLOAT'},
-        ),
-        (('-so','--subtle_overlay'), 
-            (f'The alpha for an alternate, less sharp method of overlaying the target image on the mosaic.'), 
-            overlay_group,
-            {'type':float, 'default':DEFAULT_SUBTLE_OVERLAY, 'metavar':'FLOAT'},
-        ),
-        (('-r','--repeat_penalty'), 
-            (f'How much to penalize repetition when selecting tiles.'), 
-            weight_group,
-            {'type':float, 'default':DEFAULT_REPEAT_PENALTY, 'metavar':'FLOAT'},
-        ),
-        (('-S','--show'), 
-            ('If given, opens a preview of the output image upon completion.'), 
-            extra_group,
-            {'action':'store_true'},
-        ),
-        (('-d','--subdivisions'), 
-            ('Max number of subdivisions allowed in each main tile.'), 
-            extra_group,
-            {'type':int, 'default':DEFAULT_SUBDIVISIONS, 'metavar':'INT'},
-        ),
-        (('-D','--detail_map'), 
-            ('An image that controls where extra subdivisions are added.'), 
-            extra_group,
-            {'metavar':'PATH'},
-        ),
-        (('-t','--subdivision_threshold'), 
-            ('Detail values higher than this threshold will create a subdivision.'), 
-            extra_group,
-            {'type':int, 'default':DEFAULT_SUBDIVISION_THRESHOLD, 'metavar':'INT'},
-        ),
-        (('-V','--verbose'), 
-            ('Print additional debug information.'), 
-            extra_group,
-            {'action':'store_true'},
-        ),
-        (('-h','--help'), 
-            ('Print this help message.'), 
-            extra_group,
-            {'action':'help'},
-        ),
-    ]:
-        if 'metavar' in kwargs:
-            if group is positional_group:
-                kwargs['metavar'] = ctext(kwargs['metavar'], 'BOLD')
-            else:
-                kwargs['metavar'] = ctext(kwargs['metavar'], 'GRAY')
-        if 'default' in kwargs:
-            help += ctext(f"(default: {kwargs['default']})", 'GRAY')
-        group.add_argument(*args, help=ctext(help, 'DARKBLUE'), **kwargs)
-    args = parser.parse_args()
-    VERBOSE = args.verbose
-
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~ Set up tile and source image resolution ~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # parse tiles
-    if 'x' in args.tiles.lower():
-        ht, vt = args.tiles.lower().split('x')
-        horizontal_tiles = int(ht)
-        vertical_tiles = int(vt)
-    else:
-        horizontal_tiles = vertical_tiles = int(args.tiles)
-
-
-    # friendly errors for wrong directories
-    if os.path.isdir(args.source_image):
-        raise ValueError('"source_image" is a directory.')
-    if not os.path.isdir(args.tile_folder):
-        raise ValueError('"tile_folder" should point to a folder full of images.')
-
-    # parse image scale
-    rescale_by = args.scale
-    source_path = args.source_image
-    source_image = Image.open(source_path)
-    if "x" in rescale_by.lower():
-        # width * height integers
-        w, h = rescale_by.lower().split('x')
-        source_image = source_image.resize((int(w), int(h)))
-    else:
-        # a single float
-        rescale_by = float(rescale_by)
-        if rescale_by != 1.0:
-            source_image = source_image.resize((
-                int(source_image.width * rescale_by),
-                int(source_image.height * rescale_by),
-            ))
-    cprint('Successfully read source image', 'OKBLUE')
-
-    # parse compare scale (and tile size)
-    compare_scale = args.compare_scale
-    # tile size must divide evenly into subdivision width
-    subdivisions = args.subdivisions
-    sub_width = (2**subdivisions)
-    tile_width = (source_image.width // (horizontal_tiles * sub_width)) * sub_width
-    tile_height = (source_image.height // (vertical_tiles * sub_width)) * sub_width
-    if 'x' in compare_scale.lower():
-        # width * height integers
-        w, h = compare_scale.lower().split('x')
-        compare_width = int(w)
-        compare_height = int(h)
-    else:
-        # a single float
-        compare_scale = float(compare_scale)
-        compare_width = int(tile_width * compare_scale)
-        compare_height = int(tile_height * compare_scale)
-        # clamp default compare to a reasonable value
-        if compare_scale == DEFAULT_COMPARE:
-            compare_width = min(max(1, compare_width), MAX_DEFAULT_COMPARE_RES)
-            compare_height = min(max(1, compare_height), MAX_DEFAULT_COMPARE_RES)
+    ui.add_parameter(
+        "tile_folder", category="input/output", 
+        help="The source folder containing all the image tiles.",
+        prompt="Please provide the path to a folder of images to use as tiles:",
+        metavar="PATH", static=True, 
+        )
+    ui.add_parameter(
+        "tile_resolution", category="tiles", 
+        help="The resolution to load the tiles in with.", 
+        prompt="""Please provide the resolution you would like to load the tiles in with: 
+(Really small resolutions will look bad, really big resolutions will be very slow)""",
+        metavar="INT|INTxINT", type=InputScale, static=True,
+        )
+    ui.add_parameter(
+        "source_image", category="input/output", 
+        help="The source image to base the mosaic on.", 
+        prompt="Provide the path to an image to base this mosaic on:",
+        metavar="PATH",
+        )
+    ui.add_parameter(
+        "output", category="input/output", 
+        help="The source image to base the mosaic on.", 
+        prompt="Provide the path to an image to base this mosaic on:",
+        metavar="PATH",
+        )
     
 
-    # calculate real output size (for equally sized tiles)
-    output_width = tile_width * horizontal_tiles
-    output_height = tile_height * vertical_tiles
+    ui.get_static()
 
-    tile_directory = args.tile_folder
-    num_image_tiles = len(os.listdir(tile_directory))
-
-    cprint('Converting source image...', 'OKBLUE')
-    # resize input image for exact comparison with tiles
-    og_width, og_height = source_image.width, source_image.height
-    crop = crop_from_rescale((og_width, og_height), (output_width, output_height))
-    source_image = source_image.resize((output_width, output_height), box=crop)
-    # convert to Lab color space for more accurate comparisons
-    source_image = source_image.convert(mode='RGB')
+    
 
 
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~ Finish setting up other input args ~~~~~~~~~~~~~~~~~~~~~~~~~
-    # setup error weights
-    linear_error_weight = args.linear_error_weight
-    kernel_error_weight = args.kernel_error_weight
-
-    # other image weights
-    overlay_weight = args.overlay_opacity
-    subtle_overlay_weight = args.subtle_overlay
-    repeat_penalty = args.repeat_penalty
+# def main():
+#     global \
+#         show_preview, output_path, subtle_overlay_weight, overlay_weight, repeat_penalty, \
+#         kernel_error_weight, linear_error_weight, tile_directory, \
+#         tile_width, tile_height, compare_width, compare_height, \
+#         horizontal_tiles, vertical_tiles, source_image, \
+#         output_width, output_height, num_image_tiles, VERBOSE
 
 
-    # setup input/output paths
-    output_path = args.output
+#     parser = argparse.ArgumentParser(
+#         description=ctext('This tool can be used to create a high-quality image mosaic by comparing given image tiles to a source image.', 'DARKBLUE'),
+#         epilog=f"{ctext('Example:', 'DARKBLUE')} {ctext('python3 hd_mosaic.py ../imagetiles ../targetimg.jpg 16x8', 'GRAY')}",
+#         formatter_class=argparse.RawDescriptionHelpFormatter,
+#         add_help=False,
+#     )
+#     positional_group = parser.add_argument_group(title=ctext('positional', "OKBLUE"), description=ctext('These arguments are required.', 'DARKBLUE'))
+#     scale_group = parser.add_argument_group(title=ctext('scale options', "OKBLUE"), description=ctext('These options take a float (which is multiplied by the original scale), or two integers separated by an "x".', 'DARKBLUE'))
+#     weight_group = parser.add_argument_group(title=ctext('weight options', "OKBLUE"), description=ctext('These options take a float, and control the strength of different comparison strategies.', 'DARKBLUE'))
+#     overlay_group = parser.add_argument_group(title=ctext('overlay options', "OKBLUE"), description=ctext('These options control the strength of the target image overlaid on top of the mosaic.', 'DARKBLUE'))
+#     extra_group = parser.add_argument_group(title=ctext('additional options', "OKBLUE"), description=ctext('All other options.', 'DARKBLUE'))
+#     # I'm just using this pattern to shrink the arg creation code
+#     for args, help, group, kwargs in [
+#         (('tile_folder',), 
+#             ("A path to a folder of images to build the mosaic with"), 
+#             positional_group,
+#             {'metavar':'TILE_FOLDER'},
+#         ),
+#         (('source_image',), 
+#             ("A path to an image to base the mosaic on."), 
+#             positional_group,
+#             {'metavar':'SOURCE_IMAGE'},
+#         ),
+#         (('tiles',), 
+#             ('The number of tiles to use. (EX: "16x10" sets 16 horizontal, 10 vertical tiles. "8" sets both to 8)'), 
+#             positional_group,
+#             {'metavar':'TILES'},
+#         ),
+#         (('-o','--output'), 
+#             ('The path (and/or filename) to use. Default is a generated filename in the current directory.'), 
+#             extra_group,
+#             {'metavar':'PATH'},
+#         ),
+#         (('-s','--scale'), 
+#             (f'The amount to rescale the input image.'), 
+#             scale_group,
+#             {'default':str(DEFAULT_SCALE), 'metavar':'FLOAT|INTxINT'},
+#         ),
+#         (('-c','--compare_scale'), 
+#             (f'The resolution that tiles will be compared at.'), 
+#             scale_group,
+#             {'default':str(DEFAULT_COMPARE), 'metavar':'FLOAT|INTxINT'},
+#         ),
+#         (('-l','--linear_error_weight'), 
+#             (f'How much the "linear" difference between pixels affects the output. '), 
+#             weight_group,
+#             {'type':float, 'default':DEFAULT_LINEAR_WEIGHT, 'metavar':'FLOAT'},
+#         ),
+#         (('-k','--kernel_error_weight'), 
+#             (f'How much the "kernel difference" comparison affects the output.'), 
+#             weight_group,
+#             {'type':float, 'default':DEFAULT_KERNEL_WEIGHT, 'metavar':'FLOAT'},
+#         ),
+#         (('-O','--overlay_opacity'), 
+#             (f'The alpha for a "normal" overlay of the target image over the mosaic.'), 
+#             overlay_group,
+#             {'type':float, 'default':DEFAULT_OVERLAY, 'metavar':'FLOAT'},
+#         ),
+#         (('-so','--subtle_overlay'), 
+#             (f'The alpha for an alternate, less sharp method of overlaying the target image on the mosaic.'), 
+#             overlay_group,
+#             {'type':float, 'default':DEFAULT_SUBTLE_OVERLAY, 'metavar':'FLOAT'},
+#         ),
+#         (('-r','--repeat_penalty'), 
+#             (f'How much to penalize repetition when selecting tiles.'), 
+#             weight_group,
+#             {'type':float, 'default':DEFAULT_REPEAT_PENALTY, 'metavar':'FLOAT'},
+#         ),
+#         (('-S','--show'), 
+#             ('If given, opens a preview of the output image upon completion.'), 
+#             extra_group,
+#             {'action':'store_true'},
+#         ),
+#         (('-d','--subdivisions'), 
+#             ('Max number of subdivisions allowed in each main tile.'), 
+#             extra_group,
+#             {'type':int, 'default':DEFAULT_SUBDIVISIONS, 'metavar':'INT'},
+#         ),
+#         (('-D','--detail_map'), 
+#             ('An image that controls where extra subdivisions are added.'), 
+#             extra_group,
+#             {'metavar':'PATH'},
+#         ),
+#         (('-t','--subdivision_threshold'), 
+#             ('Detail values higher than this threshold will create a subdivision.'), 
+#             extra_group,
+#             {'type':int, 'default':DEFAULT_SUBDIVISION_THRESHOLD, 'metavar':'INT'},
+#         ),
+#         (('-V','--verbose'), 
+#             ('Print additional debug information.'), 
+#             extra_group,
+#             {'action':'store_true'},
+#         ),
+#         (('-h','--help'), 
+#             ('Print this help message.'), 
+#             extra_group,
+#             {'action':'help'},
+#         ),
+#     ]:
+#         if 'metavar' in kwargs:
+#             if group is positional_group:
+#                 kwargs['metavar'] = ctext(kwargs['metavar'], 'BOLD')
+#             else:
+#                 kwargs['metavar'] = ctext(kwargs['metavar'], 'GRAY')
+#         if 'default' in kwargs:
+#             help += ctext(f"(default: {kwargs['default']})", 'GRAY')
+#         group.add_argument(*args, help=ctext(help, 'DARKBLUE'), **kwargs)
+#     args = parser.parse_args()
+#     VERBOSE = args.verbose
 
-    # create generated output filename
-    if output_path is None \
-    or output_path.endswith(os.path.sep):
-
-        out_file = f'mosaic_{horizontal_tiles}x{vertical_tiles}'
-
-        # add each non-default param to the filename
-        for real_var, default_var, var_sym in [
-            (compare_scale, DEFAULT_COMPARE, 'c'),
-            (linear_error_weight, DEFAULT_LINEAR_WEIGHT, 'l'),
-            (kernel_error_weight, DEFAULT_KERNEL_WEIGHT, 'k'),
-            (repeat_penalty, DEFAULT_REPEAT_PENALTY, 'r'),
-            (overlay_weight, DEFAULT_OVERLAY, 'O'),
-            (subtle_overlay_weight, DEFAULT_SUBTLE_OVERLAY, 'so'),
-        ]:
-            if real_var != default_var:
-                out_file += f"_{var_sym}{real_var}"
-
-        out_file += '.jpg'
-        if output_path is None:
-            output_path = os.path.join(os.getcwd(), out_file)
-        else:
-            output_path = os.path.join(output_path, out_file)
-
-    show_preview = args.show
-
-    if args.detail_map:
-        detail_map = Image.open(args.detail_map)
-    else:
-        detail_map = None
-
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~ Print friendly info about the current job ~~~~~~~~~~~~~~~~~~~~~~~~~
-    cprint(f'Source image size: {og_width}x{og_height}', 'HEADER')
-    cprint(f'{num_image_tiles} input tiles, {tile_width}x{tile_height}px each', 'HEADER')
-    cprint(f'{horizontal_tiles}x{vertical_tiles} tiles in output image, totaling {horizontal_tiles * vertical_tiles} (up to {horizontal_tiles*sub_width * vertical_tiles*sub_width} with subdivisions).', 'HEADER')
-    cprint(f'Final output size: {output_width}x{output_height}', 'HEADER')
-    cprint(f'Comparing at {compare_width}x{compare_height}px', 'HEADER')
-    cprint(f'linear_weight: {linear_error_weight}, kernel_weight: {kernel_error_weight}, repeat_penalty: {repeat_penalty}', 'HEADER')
-    cprint(f'Overlay alpha: {overlay_weight}, Subtle overlay alpha: {subtle_overlay_weight}', 'HEADER')
+#     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~ Set up tile and source image resolution ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#     # parse tiles
+#     if 'x' in args.tiles.lower():
+#         ht, vt = args.tiles.lower().split('x')
+#         horizontal_tiles = int(ht)
+#         vertical_tiles = int(vt)
+#     else:
+#         horizontal_tiles = vertical_tiles = int(args.tiles)
 
 
-    mosaic = Mosaic(
-        source_image=source_image,
-        compare_size=Scale(compare_width, compare_height),
-        tile_size=Scale(tile_width, tile_height),
-        output_size=Scale(output_width, output_height),
-        output_tiles_res=Scale(horizontal_tiles, vertical_tiles),
-        linear_error_weight=linear_error_weight,
-        kernel_error_weight=kernel_error_weight,
-        overlay_alpha=overlay_weight,
-        subtle_overlay_alpha=subtle_overlay_weight,
-        tile_directory=tile_directory,
-        repeat_penalty=repeat_penalty,
-        detail_map=detail_map,
-        subdivisions=subdivisions,
-        subdivision_threshold=args.subdivision_threshold,
-    )
-    mosaic.fit_tiles()
-    mosaic.save(output_path=output_path, show_preview=show_preview)
-    cprint("Done!", 'OKGREEN')
+#     # friendly errors for wrong directories
+#     if os.path.isdir(args.source_image):
+#         raise ValueError('"source_image" is a directory.')
+#     if not os.path.isdir(args.tile_folder):
+#         raise ValueError('"tile_folder" should point to a folder full of images.')
+
+#     # parse image scale
+#     rescale_by = args.scale
+#     source_path = args.source_image
+#     source_image = Image.open(source_path)
+#     if "x" in rescale_by.lower():
+#         # width * height integers
+#         w, h = rescale_by.lower().split('x')
+#         source_image = source_image.resize((int(w), int(h)))
+#     else:
+#         # a single float
+#         rescale_by = float(rescale_by)
+#         if rescale_by != 1.0:
+#             source_image = source_image.resize((
+#                 int(source_image.width * rescale_by),
+#                 int(source_image.height * rescale_by),
+#             ))
+#     cprint('Successfully read source image', 'OKBLUE')
+
+#     # parse compare scale (and tile size)
+#     compare_scale = args.compare_scale
+#     # tile size must divide evenly into subdivision width
+#     subdivisions = args.subdivisions
+#     sub_width = (2**subdivisions)
+#     tile_width = (source_image.width // (horizontal_tiles * sub_width)) * sub_width
+#     tile_height = (source_image.height // (vertical_tiles * sub_width)) * sub_width
+#     if 'x' in compare_scale.lower():
+#         # width * height integers
+#         w, h = compare_scale.lower().split('x')
+#         compare_width = int(w)
+#         compare_height = int(h)
+#     else:
+#         # a single float
+#         compare_scale = float(compare_scale)
+#         compare_width = int(tile_width * compare_scale)
+#         compare_height = int(tile_height * compare_scale)
+#         # clamp default compare to a reasonable value
+#         if compare_scale == DEFAULT_COMPARE:
+#             compare_width = min(max(1, compare_width), MAX_DEFAULT_COMPARE_RES)
+#             compare_height = min(max(1, compare_height), MAX_DEFAULT_COMPARE_RES)
+    
+
+#     # calculate real output size (for equally sized tiles)
+#     output_width = tile_width * horizontal_tiles
+#     output_height = tile_height * vertical_tiles
+
+#     tile_directory = args.tile_folder
+#     num_image_tiles = len(os.listdir(tile_directory))
+
+#     cprint('Converting source image...', 'OKBLUE')
+#     # resize input image for exact comparison with tiles
+#     og_width, og_height = source_image.width, source_image.height
+#     crop = crop_from_rescale((og_width, og_height), (output_width, output_height))
+#     source_image = source_image.resize((output_width, output_height), box=crop)
+#     # convert to Lab color space for more accurate comparisons
+#     source_image = source_image.convert(mode='RGB')
+
+
+#     # ~~~~~~~~~~~~~~~~~~~~~~~~~ Finish setting up other input args ~~~~~~~~~~~~~~~~~~~~~~~~~
+#     # setup error weights
+#     linear_error_weight = args.linear_error_weight
+#     kernel_error_weight = args.kernel_error_weight
+
+#     # other image weights
+#     overlay_weight = args.overlay_opacity
+#     subtle_overlay_weight = args.subtle_overlay
+#     repeat_penalty = args.repeat_penalty
+
+
+#     # setup input/output paths
+#     output_path = args.output
+
+#     # create generated output filename
+#     if output_path is None \
+#     or output_path.endswith(os.path.sep):
+
+#         out_file = f'mosaic_{horizontal_tiles}x{vertical_tiles}'
+
+#         # add each non-default param to the filename
+#         for real_var, default_var, var_sym in [
+#             (compare_scale, DEFAULT_COMPARE, 'c'),
+#             (linear_error_weight, DEFAULT_LINEAR_WEIGHT, 'l'),
+#             (kernel_error_weight, DEFAULT_KERNEL_WEIGHT, 'k'),
+#             (repeat_penalty, DEFAULT_REPEAT_PENALTY, 'r'),
+#             (overlay_weight, DEFAULT_OVERLAY, 'O'),
+#             (subtle_overlay_weight, DEFAULT_SUBTLE_OVERLAY, 'so'),
+#         ]:
+#             if real_var != default_var:
+#                 out_file += f"_{var_sym}{real_var}"
+
+#         out_file += '.jpg'
+#         if output_path is None:
+#             output_path = os.path.join(os.getcwd(), out_file)
+#         else:
+#             output_path = os.path.join(output_path, out_file)
+
+#     show_preview = args.show
+
+#     if args.detail_map:
+#         detail_map = Image.open(args.detail_map)
+#     else:
+#         detail_map = None
+
+#     # ~~~~~~~~~~~~~~~~~~~~~~~~~ Print friendly info about the current job ~~~~~~~~~~~~~~~~~~~~~~~~~
+#     cprint(f'Source image size: {og_width}x{og_height}', 'HEADER')
+#     cprint(f'{num_image_tiles} input tiles, {tile_width}x{tile_height}px each', 'HEADER')
+#     cprint(f'{horizontal_tiles}x{vertical_tiles} tiles in output image, totaling {horizontal_tiles * vertical_tiles} (up to {horizontal_tiles*sub_width * vertical_tiles*sub_width} with subdivisions).', 'HEADER')
+#     cprint(f'Final output size: {output_width}x{output_height}', 'HEADER')
+#     cprint(f'Comparing at {compare_width}x{compare_height}px', 'HEADER')
+#     cprint(f'linear_weight: {linear_error_weight}, kernel_weight: {kernel_error_weight}, repeat_penalty: {repeat_penalty}', 'HEADER')
+#     cprint(f'Overlay alpha: {overlay_weight}, Subtle overlay alpha: {subtle_overlay_weight}', 'HEADER')
+
+
+#     mosaic = Mosaic(
+#         source_image=source_image,
+#         compare_size=Scale(compare_width, compare_height),
+#         tile_size=Scale(tile_width, tile_height),
+#         output_size=Scale(output_width, output_height),
+#         output_tiles_res=Scale(horizontal_tiles, vertical_tiles),
+#         linear_error_weight=linear_error_weight,
+#         kernel_error_weight=kernel_error_weight,
+#         overlay_alpha=overlay_weight,
+#         subtle_overlay_alpha=subtle_overlay_weight,
+#         tile_directory=tile_directory,
+#         repeat_penalty=repeat_penalty,
+#         detail_map=detail_map,
+#         subdivisions=subdivisions,
+#         subdivision_threshold=args.subdivision_threshold,
+#     )
+#     mosaic.fit_tiles()
+#     mosaic.save(output_path=output_path, show_preview=show_preview)
+#     cprint("Done!", 'OKGREEN')
 
 
 
@@ -410,7 +551,7 @@ class DebugTimer:
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Scale ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # -----------------------------------------------------------------------------------------------------------------------------
 class Scale:
-    "A simple helper for bundling width/height information"
+    """A simple helper for bundling width/height information"""
     def __init__(self, width, height):
         self.w = width
         self.h = height
@@ -429,6 +570,24 @@ class Scale:
         if idx == 0:
             return self.w
         return self.h
+    
+    def __repr__(self):
+        return f"Scale({self.w}x{self.h})"
+
+class InputScale(Scale):
+    """Convert an input string into a Scale"""
+    def __init__(self, intext:str):
+        text = intext.lower().replace(",", "x").replace(".", "x")
+        try:
+            if "x" in text:
+                width, height = text.split("x")
+                width, height = int(width), int(height)
+            else:
+                width = height = int(text)
+        except ValueError:
+            raise ValueError(f"'{intext}' can't be interpreted as a scale. (Expected format is 'INT' or 'INTxINT')")
+        super().__init__(width, height)
+            
 
 
 
