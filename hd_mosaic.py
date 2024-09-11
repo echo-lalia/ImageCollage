@@ -61,13 +61,26 @@ class InputParameter:
         return string
 
 
+class InputAction:
+    def __init__(
+            self,
+            name,
+            description,
+            callback,
+    ):
+        self.name = name
+        self.description = description
+        self.callback = callback
+
 
 
 class UserInput:
     """This class is designed to get input variables from the user, using both argparse and input."""
-    def __init__(self):
+    def __init__(self, name):
+        self.name = name
         self.categories = {"":{"desc":"", "params":[]}}
         self.params = {}
+        self.actions = {}
 
     def __getitem__(self, key):
         return self.params[key]
@@ -84,6 +97,17 @@ class UserInput:
         param = InputParameter(name, **kwargs)
         self.categories[category]["params"].append(name)
         self.params[name] = param
+    
+    def add_action(
+            self,
+            name,
+            desc,
+            callback,
+    ):
+        self.actions.append(
+            InputAction(name, desc, callback)
+        )
+        
 
     def get_param(self, name, prev_message=""):
         param = self[name]
@@ -119,11 +143,16 @@ class UserInput:
             print(prev_message)
 
 
+    def main_menu(self):
+        """Show the main menu"""
+
+
+
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ARG SETUP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # -----------------------------------------------------------------------------------------------------------------------------
 def main():
     global VERBOSE, USER_INPUT
-    USER_INPUT = ui = UserInput()
+    USER_INPUT = ui = UserInput("hd_mosaic")
 
     ui.add_category("input/output", "Options for the input/output of images")
     ui.add_category("tiles", "Options relating to the tiles")
