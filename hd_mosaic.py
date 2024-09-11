@@ -78,15 +78,24 @@ class UserInput:
     """This class is designed to get input variables from the user, using both argparse and input."""
     def __init__(self, name):
         self.name = name
-        self.categories = {"":{"desc":"", "params":[]}}
+        self.categories = {}
         self.params = {}
         self.actions = {}
+
 
     def __getitem__(self, key):
         return self.params[key]
 
+
+    def _clear_screen(self):
+        size = shutil.get_terminal_size()
+        for _ in range(size.lines):
+            print()
+
+
     def add_category(self, category, description):
         self.categories[category] = {"desc":description, "params":[]}
+
 
     def add_parameter(
             self,
@@ -98,16 +107,15 @@ class UserInput:
         self.categories[category]["params"].append(name)
         self.params[name] = param
     
+
     def add_action(
             self,
             name,
             desc,
             callback,
     ):
-        self.actions.append(
-            InputAction(name, desc, callback)
-        )
-        
+        self.actions[name] = InputAction(name, desc, callback)
+
 
     def get_param(self, name, prev_message=""):
         param = self[name]
@@ -119,19 +127,18 @@ class UserInput:
         while True:
             try:
                 # clear screen
-                size = shutil.get_terminal_size()
-                for _ in range(size.lines):
-                    print()
+                self._clear_screen()
 
                 print(prev_message)
 
                 inpt = input(param.prompt_string(add_in=add_in))
-                if inpt == "exit":
-                    sys.exit()
+                inpt = self.pre_process_input(inpt)
+
                 param.value = param.type(inpt)
                 return ctext(f"Set {param.name} to {param.value}.", 'OKGREEN')
             except (ValueError) as e:
                 add_in = ctext(getattr(e, 'message', str(e)), 'WARNING')
+
 
     def get_static(self):
         """Fill the static parameters"""
@@ -143,8 +150,105 @@ class UserInput:
             print(prev_message)
 
 
+    @staticmethod
+    def pre_process_input(inpt):
+        """Clean input, and also handle exit command"""
+        inpt = inpt.strip()
+        if inpt == "exit":
+            sys.exit()
+        return inpt
+
+
+    def _print_main_menu(self, ex_txt=None):
+        # print the menu options
+        self._clear_screen()
+
+        if ex_txt:
+            print(f"{ex_txt}\n")
+
+        cprint(self.name, "OKBLUE")
+        cprint("\nActions:", "GRAY")
+
+        for idx, items in enumerate(self.actions.items()):
+            name, action = items
+            print(f"{ctext(str(idx), "HEADER")}:  {ctext(name, "OKCYAN")} {ctext(f'- {action.description}', "GRAY")}")
+
+        cprint("\n\nOptions:", "GRAY")
+
+        for idx, item in enumerate(self.categories.items(), start=len(self.actions)):
+            category, vals = item
+            desc = vals['desc']
+            print(f"{ctext(str(idx), "HEADER")}: {ctext(category, "HEADER")} {ctext(f'- {desc}', "GRAY")}")
+        
+        cprint("\n\nSelect an action or option category:", "GRAY")
+
+
+    def _print_category_menu(self, category, ex_txt=None):
+        # print the menu options
+        self._clear_screen()
+        
+        if ex_txt:
+            print(f"{ex_txt}\n")
+
+        desc = self.categories[category]['desc']
+        params = self.categories[category]['params']
+
+        cprint(category, "OKBLUE")
+        cprint(desc, "GRAY")
+
+        cprint("\n\nOptions:", "GRAY")
+
+        for idx, param in enumerate(params):
+            print(f"{ctext(str(idx), "HEADER")}{ctext(':', 'GRAY')}{ctext(param, "HEADER")}{ctext(' = ', 'GRAY')}{ctext(repr(self[param].value), 'DARKBLUE')}{ctext(f' - {self[param].help}', "GRAY")}")
+        
+        cprint("\n\nSelect an option:", "GRAY")
+
+
+    def category_menu(self, category):
+        """Show the menu for this category"""
+        # ex txt holds feedback info to display above the menu
+        ex_txt = None
+        params = self.categories[category]['params']
+        while True:
+            # keep running the menu until back is given
+            self._print_category_menu(category, ex_txt=ex_txt)
+            choice = self.pre_process_input(input())
+            if choice in ("back", "..", "-"):
+                return
+            elif choice in params:
+                ex_txt = self.get_param(choice)
+            elif choice.isnumeric() and int(choice) < len(params):
+                param = params[int(choice)]
+                ex_txt = self.get_param(param)
+            else:
+                ex_txt = ctext(f"'{choice}' isn't a valid choice.", "WARNING")
+
+
     def main_menu(self):
         """Show the main menu"""
+        ex_txt = None
+        actions = list(self.actions.keys())
+        categories = list(self.categories.keys())
+        while True:
+            self._print_main_menu(ex_txt=ex_txt)
+            choice = self.pre_process_input(input())
+            if choice in self.actions:
+                self.actions[choice].callback()
+                ex_txt = None
+            elif choice in self.categories:
+                self.category_menu(choice)
+                ex_txt = None
+            elif choice.isnumeric() and int(choice) < len(actions):
+                action = actions[int(choice)]
+                self.actions[action].callback()
+                ex_txt = None
+            elif choice.isnumeric() and int(choice) < (len(actions) + len(categories)):
+                category = categories[int(choice) - len(actions)]
+                self.category_menu(category)
+                ex_txt = None
+            else:
+                ex_txt = ctext(f"'{choice}' isn't a valid choice.", "WARNING")
+
 
 
 
@@ -189,10 +293,14 @@ def main():
         metavar="PATH",
         )
     
+    ui.add_action("TEST", "Dummy action", lambda: print("Testing..."))
+
+    #TESTING
+    ui.main_menu()
 
     ui.get_static()
 
-    
+    ui.main_menu()
 
 
 # def main():
