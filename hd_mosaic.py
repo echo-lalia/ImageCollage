@@ -38,7 +38,7 @@ MOSAIC = None
 # INTERACTIVE INPUT
 
 class InputParameter:
-    """This class stores information about an input parameter"""
+    """Stores information about an input parameter"""
 
     def __init__(
             self,
@@ -103,7 +103,7 @@ class InputAction:
 
 
 class UserInput:
-    """This class is designed to get input variables from the user, using both argparse and input."""
+    """Gets input variables from the user, creating a simple menu."""
 
     def __init__(self, name:str):
         """Create an object for managing a simple CLI menu."""
@@ -313,7 +313,8 @@ def main():
     # argparser for verbose and help messages
     parser = argparse.ArgumentParser(
         description=ctext(
-            'This tool can be used to create a high-quality image mosaic by comparing given image tiles to a source image.',
+            'This tool can be used to create a high-quality image mosaic '
+            'by comparing given image tiles to a source image.',
             'DARKBLUE',
             ),
     )
@@ -531,15 +532,14 @@ def folder_path(path:str) -> str:
 
 
 
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ PRINT HELPERS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# -----------------------------------------------------------------------------------------------------------------------------
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ PRINT HELPERS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 class Printer:
     """Simple helper for printing progress text."""
 
     _last_line_len = 0
     _max_line_len = 0
 
-    _load_chars = ["⢿", "⣻", "⣽", "⣾", "⣷", "⣯", "⣟", "⡿"]
+    _load_chars = ['⢿', '⣻', '⣽', '⣾', '⣷', '⣯', '⣟', '⡿']
     _char_idx = 0
 
     _prntclrs = {
@@ -577,13 +577,13 @@ class Printer:
     def _ensure_length(self, text:str) -> str:
         """Prevent text len from being too long."""
         if len(text) > self._max_line_len:
-            return f"{text[:self._max_line_len-3]}..."
+            return f'{text[:self._max_line_len-3]}...'
         return text
 
     @staticmethod
     def ctext(text:str, color:str) -> str:
         """Generate a colored string and return it."""
-        color = Printer._prntclrs.get(color.upper(), "ENDC")
+        color = Printer._prntclrs.get(color.upper(), 'ENDC')
         return f"{color}{text}{Printer._prntclrs['ENDC']}"
 
     def cprint(self, text:str, color:str):
@@ -593,8 +593,7 @@ class Printer:
 
     def write_progress(self, text):
         """Write status to the terminal without starting a new line, erasing old text."""
-
-        text = f"  {self.next_char()} - {text}..."
+        text = f'  {self.next_char()} - {text}...'
         text = self._ensure_length(self._pad_text(text))
         print(self.ctext(text, 'OKCYAN'), end='\r')
 
@@ -615,9 +614,9 @@ cwrite = Printer.write_progress
 
 
 
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Image functions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# -----------------------------------------------------------------------------------------------------------------------------
-def crop_from_rescale(old_size, new_size):
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Image functions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+def crop_from_rescale(old_size, new_size) -> tuple[int, int, int, int]:
+    """Create a crop for a scale that maintains the aspect ratio"""
     ow, oh = old_size
     nw, nh = new_size
     width_shrink = (ow - nw) // 2
@@ -632,14 +631,18 @@ def crop_from_rescale(old_size, new_size):
 
 
 class DebugTimer:
-    def __init__(self, text):
+    """Simple helper for timing various operations"""
+
+    def __init__(self, text:str):
+        """Create a DebugTimer that times a task named `text`"""
         self.text = text
         self.start_time = time.time()
-    
+
     def print(self):
+        """Print the result of the timer"""
         cprint(
-            f"{self.text}: {time.time()-self.start_time:.2f}s",
-            "UNDERLINE"
+            f'{self.text}: {time.time()-self.start_time:.2f}s',
+            'UNDERLINE',
         )
 
 
@@ -648,58 +651,64 @@ class DebugTimer:
 # -----------------------------------------------------------------------------------------------------------------------------
 class Scale:
     """A simple helper for bundling width/height information"""
-    def __init__(self, width, height):
+
+    def __init__(self, width:int, height:int):
+        """Create a Scale with given width and height"""
         self.w = width
         self.h = height
-    
+
     def __tuple__(self):
         return (self.w, self.h)
 
     def __iter__(self):
-        for x in self.w, self.h:
-            yield x
-    
+        yield from (self.w, self.h)
+
     def __len__(self):
         return 2
-    
+
     def __eq__(self, other):
         if isinstance(other, str):
-            return f"{self.w}x{self.h}" == other.lower()
+            return f'{self.w}x{self.h}' == other.lower()
         if isinstance(other, tuple) or hasattr(other, '__tuple__'):
             return tuple(self) == tuple(other)
         return NotImplemented
-    
+
     def __getitem__(self, idx):
         if idx == 0:
             return self.w
         return self.h
-    
+
     def __repr__(self):
-        return f"{self.w}x{self.h}"
+        return f'{self.w}x{self.h}'
+
 
 class InputScale(Scale):
     """Convert an input string into a Scale"""
+
     def __init__(self, intext:str):
-        text = intext.lower().replace(",", "x").replace(".", "x")
+        """Create a Scale from an input str"""
+        text = intext.lower().replace(',', 'x').replace('.', 'x')
         try:
-            if "x" in text:
-                width, height = text.split("x")
+            if 'x' in text:
+                width, height = text.split('x')
                 width, height = int(width), int(height)
             else:
                 width = height = int(text)
         except ValueError:
-            raise ValueError(f"'{intext}' can't be interpreted as a scale. (Expected format is 'INT' or 'INTxINT')")
+            msg = f"'{intext}' can't be interpreted as a scale. (Expected format is 'INT' or 'INTxINT')"
+            raise ValueError(msg)  # noqa: B904
         if width == 0 or height == 0:
-            raise ValueError(f"{width}x{height} is too small. Values smaller than 1 are impossible.")
+            msg = f'{width}x{height} is too small. Values smaller than 1 are impossible.'
+            raise ValueError(msg)
         super().__init__(width, height)
-            
-
 
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ InputTile ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # -----------------------------------------------------------------------------------------------------------------------------
 class InputTile:
+    """Load/store images and make comparisons between them"""
+
     compare_size = None
     kernel_error_weight = DEFAULT_KERNEL_WEIGHT
     linear_error_weight = DEFAULT_LINEAR_WEIGHT
@@ -740,12 +749,13 @@ class InputTile:
 
 
     def setup_compare_arrays(self):
-        compare_img = self.img.resize(self.compare_size).convert(mode="LAB")
+        """Create numpy arrays for comparing image similarity"""
+        compare_img = self.img.resize(self.compare_size).convert(mode='LAB')
         self.linear_array = self._as_linear_array(compare_img)
         self.kernel_diff_array = self._as_kernel_diff_array(compare_img)
 
 
-    def get_image(self, resize=None):
+    def get_image(self, resize=None) -> Image.Image:
         """Get the resized tile, and track usage."""
         self.repeat_error += InputTile.repeat_penalty
         return self.img.resize(resize) if resize else self.img
@@ -759,9 +769,9 @@ class InputTile:
         return err
 
 
-    def _as_kernel_diff_array(self, img):
-        """
-        For each pixel, avg val with neighbors to determine pixel kernel,
+    def _as_kernel_diff_array(self, img) -> np.array:
+        """For each pixel, avg val with neighbors to determine pixel kernel.
+
         return array representing the differences between the pixels and the pixel kernels.
         """
         arr = np.array([])
@@ -776,21 +786,21 @@ class InputTile:
                         if 0 <= dx < img.width \
                         and 0 <= dy < img.height:
                             avg_val += img.getpixel((dx, dy))[0] / 9
-                
+
                 # compare to real val
                 arr = np.append(arr, abs(img.getpixel((x,y))[0] - avg_val))
         return arr
 
 
-    def _as_linear_array(self, img):
+    def _as_linear_array(self, img) -> np.array:
+        """Convert Image to an array for comparison"""
         # convert to Lab color space for more accurate comparisons
-        arr = np.array(
+        return np.array(
             [img.getpixel((x,y)) for y in range(img.height) for x in range(img.width)]
             )
-        return arr
 
 
-    def _crop_from_ratio(self, width_height, ratio):
+    def _crop_from_ratio(self, width_height, ratio) -> Scale:
         """Return the cropped width/height to match the given ratio"""
         w, h = width_height
         rw, rh = ratio
@@ -799,13 +809,13 @@ class InputTile:
         r_width_factor = rw / rh
 
         width_factor = s_width_factor / r_width_factor
-        
+
         # output must be smaller than input res
         if width_factor > 1:
             w /= width_factor
         else:
             h *= width_factor
-        
+
         return Scale(int(w), int(h))
 
 
@@ -813,7 +823,8 @@ class InputTile:
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Mosaic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # -----------------------------------------------------------------------------------------------------------------------------
 class Mosaic:
-    "A class to hold and work on the mosaic tiles."
+    """A class to hold and work on the mosaic tiles."""
+
     tile_load_size = None
     arrays_made = False
 
@@ -824,8 +835,8 @@ class Mosaic:
     def __init__(
             self,
             tile_load_size,
-            tile_directory,
-    ):
+            tile_directory):
+        """Create a Mosaic, loading images from given directory using given size."""
         self.tile_load_size = tile_load_size
         self.tile_size = None
         self.source_image = None
@@ -846,16 +857,17 @@ class Mosaic:
         self.subdivision_threshold = None
 
         if VERBOSE:
-            timer = DebugTimer("Load Tiles")
+            timer = DebugTimer('Load Tiles')
 
         self.tiles = self.load_tiles(tile_directory)
 
         if VERBOSE:
             timer.print()
-        
+
 
 
     def make_all_compare_arrays(self):
+        """Create 'compare' arrays for each tile in Mosaic"""
         Mosaic.arrays_made = True
         num_tiles = len(self.tiles)
         for idx, tile in enumerate(self.tiles):
@@ -876,9 +888,8 @@ class Mosaic:
             kernel_error_weight=None,
             repeat_penalty=None,
             overlay_alpha=None,
-            subtle_overlay_alpha=None,
-        ):
-
+            subtle_overlay_alpha=None):
+        """Update configuraiton for Mosaic"""
         if source_image_path:
             self.source_image_path = source_image_path
         if source_image_rescale:
@@ -909,9 +920,9 @@ class Mosaic:
 
 
         if (source_image_path
-        or source_image_rescale 
-        or output_tiles_res 
-        or subdivisions 
+        or source_image_rescale
+        or output_tiles_res
+        or subdivisions
         or detail_map_path) \
         and (self.source_image_path is not None
         and self.output_tiles_res is not None):
@@ -924,25 +935,24 @@ class Mosaic:
                 self.detail_map = self._make_detail_map()
             else:
                 self.detail_map = self._setup_detail_map()
-    
+
 
 
     def _setup_source(self):
         """Load input image and setup adjusted image scales"""
-
         # parse image scale
         rescale_by = self.source_image_rescale
         source_path = self.source_image_path
         source_image = Image.open(source_path)
 
-        cprint(f"Target image input size: {source_image.width}x{source_image.height}", "HEADER")
+        cprint(f'Target image input size: {source_image.width}x{source_image.height}', 'HEADER')
 
         if rescale_by != 1.0:
             source_image = source_image.resize((
                 int(source_image.width * rescale_by),
                 int(source_image.height * rescale_by),
             ))
-            cprint(f"Rescaled to: {source_image.width}x{source_image.height}", "HEADER")
+            cprint(f'Rescaled to: {source_image.width}x{source_image.height}', 'HEADER')
 
         # tile size must divide evenly into subdivision width
         subdivisions = self.subdivisions
@@ -963,42 +973,46 @@ class Mosaic:
         source_image = source_image.resize((output_width, output_height), box=crop)
         self.source_image = source_image.convert(mode='RGB')
 
-        cprint(f"Output tiles: {horizontal_tiles}x{vertical_tiles} tiles, {tile_width}x{tile_height}px each.", "HEADER")
-        cprint(f"With {subdivisions} subdivision steps, up to {horizontal_tiles*sub_width}x{vertical_tiles*sub_width} total sub-tiles.", "HEADER")
-        cprint(f"Output image size: {self.source_image.width}x{self.source_image.height}", "HEADER")
+        cprint(f'Output tiles: {horizontal_tiles}x{vertical_tiles} tiles, {tile_width}x{tile_height}px each.', 'HEADER')
+        cprint(
+            f'With {subdivisions} subdivision steps, '
+            f'up to {horizontal_tiles*sub_width}x{vertical_tiles*sub_width} total sub-tiles.',
+            'HEADER',
+            )
+        cprint(f'Output image size: {self.source_image.width}x{self.source_image.height}', 'HEADER')
 
 
-    def _make_detail_map(self):
-        """
-        Create a default detail map from the source image,
-        by running edge detection on the source image, and scaling it down.
+    def _make_detail_map(self) -> Image.Image:
+        """Create a default detail map from the source image.
+
+        Creates a detail map by running edge detection on the source image, and scaling it down.
         """
         h_tiles, v_tiles = self.output_tiles_res
         map_width = h_tiles * (2 ** self.subdivisions)
         map_height = v_tiles * (2 ** self.subdivisions)
         # generate edge map from the image (Areas with more edges are brighter)
         edge_map = self.source_image\
-            .convert(mode="RGB")\
+            .convert(mode='RGB')\
             .filter(ImageFilter.FIND_EDGES)\
             .resize((map_width, map_height))\
-            .convert(mode="L")
+            .convert(mode='L')
         # generate a radial gradient with white in the center, black on the edges
         vignette = ImageOps.invert(
-            Image.radial_gradient("L").resize((map_width, map_height))
+            Image.radial_gradient('L').resize((map_width, map_height)),
             )
         vignette = ImageEnhance.Contrast(
-            ImageChops.overlay(vignette, vignette)
+            ImageChops.overlay(vignette, vignette),
             ).enhance(2)
 
         # combine edge map and vignette to make a center-biased edge map, as our detail map
         return ImageEnhance.Contrast(
             ImageOps.autocontrast(
-                ImageChops.overlay(edge_map, vignette)
-                )
+                ImageChops.overlay(edge_map, vignette),
+                ),
             ).enhance(2)
 
 
-    def _setup_detail_map(self):
+    def _setup_detail_map(self) -> Image.Image:
         """Convert the given detail map into the expected format"""
         detail_map = Image.open(self.detail_map_path)
         h_tiles, v_tiles = self.output_tiles_res
@@ -1006,29 +1020,27 @@ class Mosaic:
         map_height = v_tiles * (2 ** self.subdivisions)
         return detail_map\
             .resize((map_width, map_height))\
-            .convert(mode="L")
+            .convert(mode='L')
 
 
-    def load_tiles(self, tile_directory):
+    def load_tiles(self, tile_directory) -> list[InputTile, ...]:
         """Open, crop, and rescale tiles from tile directory"""
         tiles = []
-        tile_idx = 0
         bad_tile_files = 0
         num_image_tiles = len(os.listdir(tile_directory))
-        for img_file in os.scandir(tile_directory):
-            tile_idx += 1
+        for tile_idx, img_file in enumerate(os.scandir(tile_directory)):
             cwrite(f'Loading tile {tile_idx}/{num_image_tiles} ({img_file.name})')
             # PIL will determine what images are or are not valid.
             try:
                 tiles.append(InputTile(img_file, self.tile_load_size))
             except (OSError, ValueError):
                 bad_tile_files += 1
-                cprint(f"Warning: {img_file.name} could not be loaded", "WARNING")
-        cprint(f"{num_image_tiles - bad_tile_files} tiles loaded.", "OKGREEN")
+                cprint(f'Warning: {img_file.name} could not be loaded', 'WARNING')
+        cprint(f'{num_image_tiles - bad_tile_files} tiles loaded.', 'OKGREEN')
         return tiles
 
 
-    def find_tile(self, tile_x, tile_y, width, height, sub=0):
+    def find_tile(self, tile_x, tile_y, width, height, sub=0) -> Image.Image:
         """Find the tile for a single x/y coordinate"""
         # start by finding detail value for this tile
         # decide if we are subdividing based on max detail value in tile
@@ -1044,10 +1056,10 @@ class Mosaic:
             max_detail = np.max(np.array(self.detail_map.crop(crop)))
             if max_detail > self.subdivision_threshold:
                 subdividing = True
-        
+
         if subdividing:
             # assemble a composite tile out of sub-tiles
-            img = Image.new(mode="RGB", size=(width, height))
+            img = Image.new(mode='RGB', size=(width, height))
             for sub_y in range(2):
                 for sub_x in range(2):
                     sub_width, sub_height = width // 2, height // 2
@@ -1059,11 +1071,11 @@ class Mosaic:
                     )
                     img.paste(
                         self.find_tile(
-                            tile_x*2 + sub_x, tile_y*2 + sub_y, 
-                            sub_width, sub_height, 
+                            tile_x*2 + sub_x, tile_y*2 + sub_y,
+                            sub_width, sub_height,
                             sub=sub+1,
                         ),
-                        box=sub_crop
+                        box=sub_crop,
                     )
             return img
         # else select one tile the ol'fashioned way
@@ -1085,10 +1097,8 @@ class Mosaic:
         if VERBOSE:
             min_err = min(final_errors)
             max_err = max(final_errors)
-            if min_err < self.min_error:
-                self.min_error = min_err
-            if max_err > self.max_error:
-                self.max_error = max_err
+            self.min_error = min(min_err, self.min_error)
+            self.max_error = max(max_err, self.max_error)
 
         # get the first index where error was equal to the smallest error
         # select the tile at that index
@@ -1098,9 +1108,10 @@ class Mosaic:
 
 
     def fit_tiles(self):
-        """
+        """Fit all tiles in the Mosaic
+
         Scan through horizontal/vertical lines,
-        matching a tile to each segment of the source image, 
+        matching a tile to each segment of the source image,
         and add it to the mosaic.
         """
         # if compare arrays have never been loaded, load the tiles.
@@ -1121,7 +1132,7 @@ class Mosaic:
             for tile_x in tile_xs:
 
                 tile_idx += 1
-                cwrite(f"Comparing tile {tile_idx}/{total_tiles} ({tile_x}x{tile_y})")
+                cwrite(f'Comparing tile {tile_idx}/{total_tiles} ({tile_x}x{tile_y})')
 
                 # find the tile(s) matching this x/y
                 this_tile = self.find_tile(tile_x, tile_y, tile_width, tile_height)
@@ -1132,36 +1143,37 @@ class Mosaic:
                     tile_y * tile_height + tile_height,
                 )
                 self.mosaic.paste(
-                    this_tile, box=crop
+                    this_tile,
+                    box=crop,
                 )
-                # self.mosaic.paste(
-                #     this_tile.get_image(), box=crop
-                # )
 
 
-        cprint(f"{total_tiles} tiles selected.", "OKGREEN")
+        cprint(f'{total_tiles} tiles selected.', 'OKGREEN')
 
         if self.overlay_alpha:
             cprint('Applying overlay...', 'OKBLUE')
             self.mosaic = self.add_normal_overlay()
-        
+
         if VERBOSE:
-            cprint(f'Smallest error: {self.min_error}, largest error: {self.max_error}', color="UNDERLINE")
+            cprint(f'Smallest error: {self.min_error}, largest error: {self.max_error}', color='UNDERLINE')
 
 
-    def add_normal_overlay(self):
+    def add_normal_overlay(self) -> Image.Image:
+        """Overlay the source image over the whole mosaic"""
         overlay_img = ImageChops.overlay(self.mosaic, self.source_image)
         return ImageChops.blend(self.mosaic, overlay_img, self.overlay_alpha)
 
-    def add_subtle_overlay(self, tile, source_tile):
+
+    def add_subtle_overlay(self, tile, source_tile) -> Image.Image:
+        """Add one section of subtle overlay to a tile."""
         if not self.subtle_overlay_alpha:
             return tile
         return ImageChops.blend(
-            tile, 
+            tile,
             ImageChops.overlay(
                 tile,
-                source_tile.filter(ImageFilter.GaussianBlur(max(tile.width, tile.height) // 2))
-                ), 
+                source_tile.filter(ImageFilter.GaussianBlur(max(tile.width, tile.height) // 2)),
+                ),
             self.subtle_overlay_alpha,
             )
 
@@ -1169,15 +1181,14 @@ class Mosaic:
     def save(self, show_preview, output_path):
         """Save (and/or show) the generated mosaic"""
         if show_preview:
-            cprint('Showing img...', "OKBLUE")
+            cprint('Showing img...', 'OKBLUE')
             self.mosaic.show()
 
-        cprint('Saving img...', "OKBLUE")
-        # self.mosaic = self.mosaic.convert(mode="RGB")
+        cprint('Saving img...', 'OKBLUE')
         self.mosaic.save(output_path)
         cprint(f'Saved as "{output_path}"', 'OKGREEN')
 
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
