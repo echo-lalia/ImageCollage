@@ -26,6 +26,11 @@ MOSAIC = None
 
 
 
+#        ___  __  __    _    __  ___         __            __       ___
+# | |\ |  |  |__ |__)  /_\  /  `  |  | \  / |__    | |\ | |__) |  |  | 
+# | | \|  |  |__ |  \ /   \ \__,  |  |  \/  |__    | | \| |    \__/  | 
+# ---------------------------------------------------------------------
+# INTERACTIVE INPUT
 
 class InputParameter:
     """This class stores information about an input parameter"""
@@ -220,10 +225,9 @@ class UserInput:
         cprint("Select an option:", "GRAY")
 
 
-    def category_menu(self, category):
+    def category_menu(self, category, ex_txt=None):
         """Show the menu for this category"""
         # ex txt holds feedback info to display above the menu
-        ex_txt = None
         params = self.categories[category]['params']
         while True:
             # keep running the menu until back is given
@@ -241,9 +245,8 @@ class UserInput:
                 ex_txt = ctext(f"'{choice}' isn't a valid choice.", "WARNING")
 
 
-    def main_menu(self):
+    def main_menu(self, ex_txt=None):
         """Show the main menu"""
-        ex_txt = None
         actions = list(self.actions.keys())
         categories = list(self.categories.keys())
         all_options = actions + categories
@@ -442,6 +445,7 @@ def main():
         if output_path is None:
             output_path = gen_output_path()
         MOSAIC.save(output_path=output_path, show_preview=SHOW_PREVIEW)
+        return ctext(f'Saved as "{output_path}"', 'OKGREEN')
 
 
     ui.add_action("Make_Mosaic", "Generate the output mosaic", make_mosaic)
@@ -455,27 +459,6 @@ def main():
             load_options(name)
     ui.main_menu()
 
-
-
-#     mosaic = Mosaic(
-#         source_image=source_image,
-#         compare_size=Scale(compare_width, compare_height),
-#         tile_size=Scale(tile_width, tile_height),
-#         output_size=Scale(output_width, output_height),
-#         output_tiles_res=Scale(horizontal_tiles, vertical_tiles),
-#         linear_error_weight=linear_error_weight,
-#         kernel_error_weight=kernel_error_weight,
-#         overlay_alpha=overlay_weight,
-#         subtle_overlay_alpha=subtle_overlay_weight,
-#         tile_directory=tile_directory,
-#         repeat_penalty=repeat_penalty,
-#         detail_map=detail_map,
-#         subdivisions=subdivisions,
-#         subdivision_threshold=args.subdivision_threshold,
-#     )
-#     mosaic.fit_tiles()
-#     mosaic.save(output_path=output_path, show_preview=show_preview)
-#     cprint("Done!", 'OKGREEN')
 
 def gen_output_path() -> str:
     output_name = 'mosaic'
@@ -651,13 +634,20 @@ class Scale:
     def __len__(self):
         return 2
     
+    def __eq__(self, other):
+        if isinstance(other, str):
+            return f"{self.w}x{self.h}" == other.lower()
+        if isinstance(other, tuple) or hasattr(other, '__tuple__'):
+            return tuple(self) == tuple(other)
+        return NotImplemented
+    
     def __getitem__(self, idx):
         if idx == 0:
             return self.w
         return self.h
     
     def __repr__(self):
-        return f"Scale({self.w}x{self.h})"
+        return f"{self.w}x{self.h}"
 
 class InputScale(Scale):
     """Convert an input string into a Scale"""
