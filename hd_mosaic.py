@@ -1,13 +1,18 @@
+"""HD Mosaic
 
-from PIL import Image, ImageOps, ImageChops, ImageFilter, ImageEnhance
-import numpy as np
+A script that creates a photo mosaic by comparing sub-tile pixels for a higher quality result.
+"""
+# ruff: noqa: PLW0603
+
 import argparse
+import os
 import random
 import shutil
-import time
 import sys
-import os
+import time
 
+import numpy as np
+from PIL import Image, ImageChops, ImageEnhance, ImageFilter, ImageOps
 
 DEFAULT_SCALE = 1.0
 DEFAULT_COMPARE = '3x3'
@@ -27,64 +32,70 @@ MOSAIC = None
 
 
 #        ___  __  __    _    __  ___         __            __       ___
-# | |\ |  |  |__ |__)  /_\  /  `  |  | \  / |__    | |\ | |__) |  |  | 
-# | | \|  |  |__ |  \ /   \ \__,  |  |  \/  |__    | | \| |    \__/  | 
+# | |\ |  |  |__ |__)  /_\  /  `  |  | \  / |__    | |\ | |__) |  |  |
+# | | \|  |  |__ |  \ /   \ \__,  |  |  \/  |__    | | \| |    \__/  |
 # ---------------------------------------------------------------------
 # INTERACTIVE INPUT
 
 class InputParameter:
     """This class stores information about an input parameter"""
+
     def __init__(
             self,
-            name,
-            help="",
-            type=str,
-            prompt=None,
-            metavar=None,
+            name:str,
+            *,
+            help:str='',
+            type:callable=str,
+            prompt:str|None=None,
+            metavar:str|None=None,
             default=None,
-            static=False,
-            allow_none=False,
-            ):
+            static:bool=False,
+            allow_none:bool=False):
+        """Create an InputParameter object for handling `input` options."""
         self.name = name
         self.help = help
-        self.prompt = f"{name}: {help}" if prompt is None else prompt
+        self.prompt = f'{name}: {help}' if prompt is None else prompt
         self.type = type
         self.metavar = metavar
         self.default = default if default is None else type(default)
         self.value = default if default is None else type(default)
         self.static = static
         self.allow_none=allow_none
-    
+
     def set_val(self, val):
+        """Assign a value to this parameter"""
         if val is None and self.allow_none:
             self.value = val
         else:
             self.value = self.type(val)
 
-    
-    def prompt_string(self, add_in=None):
+
+    def prompt_string(self, add_in:str|None=None) -> str:
+        """Create a printable string prompting the user to provide a new value."""
         string = f"\n\n{ctext(ctext(self.name, 'HEADER'), 'BOLD')} : {ctext(self.metavar, 'GRAY')}"
         if self.value is not None:
             string += f" = {ctext(str(self.value), 'GRAY')}"
         if self.default is not None:
-            string += ctext(f" (default: {self.default})", "GRAY")
-        string += ctext(f"\n{self.help}", 'gray')
-        string += ctext(f"\n\n{self.prompt}", "OKBLUE")
+            string += ctext(f' (default: {self.default})', 'GRAY')
+        string += ctext(f'\n{self.help}', 'gray')
+        string += ctext(f'\n\n{self.prompt}', 'OKBLUE')
         if add_in:
-            string += f"\n\n{add_in}"
+            string += f'\n\n{add_in}'
         else:
-            string += "\n\n"
-        string += ctext(f"\n{self.name} = ", "HEADER")
+            string += '\n\n'
+        string += ctext(f'\n{self.name} = ', 'HEADER')
         return string
 
 
 class InputAction:
+    """Stores a callback for UserInput"""
+
     def __init__(
             self,
-            name,
-            description,
-            callback,
-    ):
+            name:str,
+            description:str,
+            callback:callable):
+        """Create a new InputAction with given name, description, and callback."""
         self.name = name
         self.description = description
         self.callback = callback
@@ -93,7 +104,9 @@ class InputAction:
 
 class UserInput:
     """This class is designed to get input variables from the user, using both argparse and input."""
-    def __init__(self, name):
+
+    def __init__(self, name:str):
+        """Create an object for managing a simple CLI menu."""
         self.name = name
         self.categories = {}
         self.params = {}
@@ -111,31 +124,33 @@ class UserInput:
             print()
 
 
-    def add_category(self, category, description):
-        self.categories[category] = {"desc":description, "params":[]}
+    def add_category(self, category:str, description:str):
+        """Add a new submenu named "category", which organizes some parameters."""
+        self.categories[category] = {'desc':description, 'params':[]}
 
 
     def add_parameter(
             self,
             name,
-            category="",
-            **kwargs,
-    ):
+            category='',
+            **kwargs):
+        """Add a new parameter to the menu."""
         param = InputParameter(name, **kwargs)
-        self.categories[category]["params"].append(name)
+        self.categories[category]['params'].append(name)
         self.params[name] = param
-    
+
 
     def add_action(
             self,
             name,
             desc,
-            callback,
-    ):
+            callback):
+        """Add a new action to the menu."""
         self.actions[name] = InputAction(name, desc, callback)
 
 
-    def get_param(self, name, prev_message=""):
+    def get_param(self, name:str, prev_message:str='') -> str:
+        """Prompt the user to get a new value for parameter."""
         param = self[name]
 
         add_in = None
@@ -154,14 +169,14 @@ class UserInput:
                 param.set_val(inpt)
                 if self.option_callback is not None:
                     self.option_callback(name)
-                return ctext(f"Set {param.name} to {param.value}.", 'OKGREEN')
+                return ctext(f'Set {param.name} to {param.value}.', 'OKGREEN')
             except (ValueError) as e:
                 add_in = ctext(getattr(e, 'message', str(e)), 'WARNING')
 
 
     def get_static(self):
-        """Fill the static parameters"""
-        prev_message = ""
+        """Prompt the user to fill all static parameters"""
+        prev_message = ''
         for name, param in self.params.items():
             if param.static:
                 prev_message = self.get_param(name, prev_message=prev_message)
@@ -170,59 +185,64 @@ class UserInput:
 
 
     @staticmethod
-    def pre_process_input(inpt):
+    def pre_process_input(inpt:str) -> str:
         """Clean input, and also handle exit command"""
         inpt = inpt.strip()
-        if inpt == "exit":
+        if inpt == 'exit':
             sys.exit()
         return inpt
 
 
-    def _print_main_menu(self, ex_txt=None):
+    def _print_main_menu(self, ex_txt:str|None=None):
         # print the menu options
         self._clear_screen()
 
-        cprint(self.name, "OKBLUE")
-        cprint("\nActions:", "GRAY")
+        cprint(self.name, 'OKBLUE')
+        cprint('\nActions:', 'GRAY')
 
         for idx, items in enumerate(self.actions.items()):
             name, action = items
             print(f'{ctext(str(idx), "HEADER")}:  {ctext(name, "OKCYAN")} {ctext(f"- {action.description}", "GRAY")}')
 
-        cprint("\nOptions:", "GRAY")
+        cprint('\nOptions:', 'GRAY')
 
         for idx, item in enumerate(self.categories.items(), start=len(self.actions)):
             category, vals = item
             desc = vals['desc']
             print(f'{ctext(str(idx), "HEADER")}: {ctext(category, "HEADER")} {ctext(f"- {desc}", "GRAY")}')
-        
+
         if ex_txt:
             print('\n' + ex_txt)
         else:
             print('\n')
-        cprint("Select an action or option category:", "GRAY")
+        cprint('Select an action or option category:', 'GRAY')
 
 
-    def _print_category_menu(self, category, ex_txt=None):
+    def _print_category_menu(self, category:str, ex_txt:str|None=None):
         # print the menu options
         self._clear_screen()
 
         desc = self.categories[category]['desc']
         params = self.categories[category]['params']
 
-        cprint(category, "OKBLUE")
-        cprint(desc, "GRAY")
+        cprint(category, 'OKBLUE')
+        cprint(desc, 'GRAY')
 
-        cprint("\n\nOptions:", "GRAY")
+        cprint('\n\nOptions:', 'GRAY')
 
         for idx, param in enumerate(params):
-            print(f'{ctext(str(idx), "HEADER")}{ctext(":", "GRAY")}{ctext(param, "HEADER")}{ctext(" = ", "GRAY")}{ctext(repr(self[param].value), "DARKBLUE")}{ctext(f" - {self[param].help}", "GRAY")}')
-        
+            print(
+                f'{ctext(str(idx), "HEADER")}{ctext(":", "GRAY")}'
+                f'{ctext(param, "HEADER")}{ctext(" = ", "GRAY")}'
+                f'{ctext(repr(self[param].value), "DARKBLUE")}'
+                f'{ctext(f" - {self[param].help}", "GRAY")}',
+                )
+
         if ex_txt:
             print('\n' + ex_txt)
         else:
             print('\n')
-        cprint("Select an option:", "GRAY")
+        cprint('Select an option:', 'GRAY')
 
 
     def category_menu(self, category, ex_txt=None):
@@ -234,18 +254,18 @@ class UserInput:
             self._print_category_menu(category, ex_txt=ex_txt)
             choice = self.pre_process_input(input())
             choice = self.filter_choice(choice, params)
-            if choice in ("back", "..", "-"):
+            if choice in ('back', '..', '-'):
                 return
-            elif choice in params:
+            if choice in params:
                 ex_txt = self.get_param(choice)
             elif choice.isnumeric() and int(choice) < len(params):
                 param = params[int(choice)]
                 ex_txt = self.get_param(param)
             else:
-                ex_txt = ctext(f"'{choice}' isn't a valid choice.", "WARNING")
+                ex_txt = ctext(f"'{choice}' isn't a valid choice.", 'WARNING')
 
 
-    def main_menu(self, ex_txt=None):
+    def main_menu(self, ex_txt:str|None=None):
         """Show the main menu"""
         actions = list(self.actions.keys())
         categories = list(self.categories.keys())
@@ -260,8 +280,8 @@ class UserInput:
                 self.category_menu(choice)
                 ex_txt = None
             else:
-                ex_txt = ctext(f"'{choice}' isn't a valid choice.", "WARNING")
-    
+                ex_txt = ctext(f"'{choice}' isn't a valid choice.", 'WARNING')
+
 
     def filter_choice(self, choice:str, options:list) -> str:
         """Try fitting choice to option, so user input doesn't need to be so specific."""
@@ -275,136 +295,139 @@ class UserInput:
         if len(options) == 1:
             return options[0]
         return choice
-    
+
 
     def verify_all_filled(self):
+        """Force all values to be filled (except for those that are allowed to be None)"""
         for name, param in self.params.items():
             if param.value is None and not param.allow_none:
-                self.get_param(param.name)
+                self.get_param(name)
 
 
 
 
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ARG SETUP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# -----------------------------------------------------------------------------------------------------------------------------
 def main():
-    global VERBOSE, USER_INPUT, SHOW_PREVIEW, MOSAIC
+    """Run the main script."""
+    global VERBOSE, USER_INPUT, MOSAIC
 
     # argparser for verbose and help messages
     parser = argparse.ArgumentParser(
-        description=ctext('This tool can be used to create a high-quality image mosaic by comparing given image tiles to a source image.', 'DARKBLUE'),
+        description=ctext(
+            'This tool can be used to create a high-quality image mosaic by comparing given image tiles to a source image.',
+            'DARKBLUE',
+            ),
     )
     parser.add_argument('-v', '--verbose', action='store_true')
     args = parser.parse_args()
     VERBOSE = args.verbose
 
     # interactive input stuff:
-    USER_INPUT = ui = UserInput("hd_mosaic")
+    USER_INPUT = ui = UserInput('hd_mosaic')
 
-    ui.add_category("input/output", "Options for the input/output images")
-    ui.add_category("tiles", "Options relating to the tiles")
-    ui.add_category("weights", "Weights to use for different comparison methods")
-    ui.add_category("overlay", "Options relating to the image overlay")
-    ui.add_category("subdivision", "Options relating to the tile subdivision")
-    ui.add_category("other", "Uncategorized options")
+    ui.add_category('input/output', 'Options for the input/output images')
+    ui.add_category('tiles', 'Options relating to the tiles')
+    ui.add_category('weights', 'Weights to use for different comparison methods')
+    ui.add_category('overlay', 'Options relating to the image overlay')
+    ui.add_category('subdivision', 'Options relating to the tile subdivision')
+    ui.add_category('other', 'Uncategorized options')
 
 
     ui.add_parameter(
-        "tile_folder", category="tiles", 
-        help="The source folder containing all the image tiles.",
-        prompt="Please provide the path to a folder of images to use as tiles:",
-        metavar="PATH", type=folder_path, static=True, 
+        'tile_folder', category='tiles',
+        help='The source folder containing all the image tiles.',
+        prompt='Please provide the path to a folder of images to use as tiles:',
+        metavar='PATH', type=folder_path, static=True,
         )
     ui.add_parameter(
-        "tile_resolution", category="tiles", 
-        help="The resolution to load the tiles in with.", 
-        prompt="""Please provide the resolution you would like to load the tiles in with: 
-(Really small resolutions will look bad, really big resolutions will be very slow. A sensible starting point might be 128x128)""",
-        metavar="INT|INTxINT", type=InputScale, static=True,
+        'tile_resolution', category='tiles',
+        help='The resolution to load the tiles in with.',
+        prompt="""Please provide the resolution you would like to load the tiles in with:
+(Small resolutions might look bad, big resolutions might be very slow. A sensible starting point might be 128x128)""",
+        metavar='INT|INTxINT', type=InputScale, static=True,
         )
     ui.add_parameter(
-        "xy_tiles", category="tiles", 
-        help="The number of horizontal and vertical tiles to use in the output mosaic.", 
-        prompt="Please provide the number of horizontal/vertical tiles you would like to use:",
-        metavar="INT|INTxINT", type=InputScale,
+        'xy_tiles', category='tiles',
+        help='The number of horizontal and vertical tiles to use in the output mosaic.',
+        prompt='Please provide the number of horizontal/vertical tiles you would like to use:',
+        metavar='INT|INTxINT', type=InputScale,
         )
     ui.add_parameter(
-        "source_image", category="input/output", 
-        help="The source image to base the mosaic on.", 
-        prompt="Provide the path to an image to base this mosaic on:",
-        metavar="PATH", type=file_path,
+        'source_image', category='input/output',
+        help='The source image to base the mosaic on.',
+        prompt='Provide the path to an image to base this mosaic on:',
+        metavar='PATH', type=file_path,
         )
     ui.add_parameter(
-        "output", category="input/output", 
-        help="The source image to base the mosaic on.", 
-        prompt="Provide the path to an image to base this mosaic on:",
-        metavar="PATH", allow_none=True,
+        'output', category='input/output',
+        help='The source image to base the mosaic on.',
+        prompt='Provide the path to an image to base this mosaic on:',
+        metavar='PATH', allow_none=True,
         )
     ui.add_parameter(
-        "input_rescale", category="input/output",
-        help="Multiplier to rescale source image by.",
-        prompt="Enter a rescale amount for the source_image:",
-        metavar="FLOAT", default=DEFAULT_SCALE, type=float,
+        'input_rescale', category='input/output',
+        help='Multiplier to rescale source image by.',
+        prompt='Enter a rescale amount for the source_image:',
+        metavar='FLOAT', default=DEFAULT_SCALE, type=float,
     )
     ui.add_parameter(
-        "compare_scale", category="tiles",
-        help="The resolution that tiles will be compared at.",
-        prompt="Enter a new compare scale:",
-        metavar="INT|INTxINT", default=DEFAULT_COMPARE, type=InputScale,
+        'compare_scale', category='tiles',
+        help='The resolution that tiles will be compared at.',
+        prompt='Enter a new compare scale:',
+        metavar='INT|INTxINT', default=DEFAULT_COMPARE, type=InputScale,
     )
     ui.add_parameter(
-        "linear_error_weight", category="weights",
+        'linear_error_weight', category='weights',
         help="How much the 'linear' comparison affects the output.",
-        prompt="Enter a new linear weight:",
-        metavar="FLOAT", default=DEFAULT_LINEAR_WEIGHT, type=float,
+        prompt='Enter a new linear weight:',
+        metavar='FLOAT', default=DEFAULT_LINEAR_WEIGHT, type=float,
     )
     ui.add_parameter(
-        "kernel_error_weight", category="weights",
+        'kernel_error_weight', category='weights',
         help="How much the 'kernel difference' comparion affects the output.",
-        prompt="Enter a new linear weight:",
-        metavar="FLOAT", default=DEFAULT_KERNEL_WEIGHT, type=float,
+        prompt='Enter a new linear weight:',
+        metavar='FLOAT', default=DEFAULT_KERNEL_WEIGHT, type=float,
     )
     ui.add_parameter(
-        "overlay_opacity", category="overlay",
+        'overlay_opacity', category='overlay',
         help="The alpha for a 'normal' overlay of the target image over the mosaic.",
-        prompt="Enter a new overlay alpha:",
-        metavar="FLOAT", default=DEFAULT_OVERLAY, type=float,
+        prompt='Enter a new overlay alpha:',
+        metavar='FLOAT', default=DEFAULT_OVERLAY, type=float,
     )
     ui.add_parameter(
-        "subtle_overlay", category="overlay",
-        help="The alpha for an alternate, less sharp method of overlaying the target image on the mosaic.",
-        prompt="Enter a new subtle overlay alpha:",
-        metavar="FLOAT", default=DEFAULT_SUBTLE_OVERLAY, type=float,
+        'subtle_overlay', category='overlay',
+        help='The alpha for an alternate, less sharp method of overlaying the target image on the mosaic.',
+        prompt='Enter a new subtle overlay alpha:',
+        metavar='FLOAT', default=DEFAULT_SUBTLE_OVERLAY, type=float,
     )
     ui.add_parameter(
-        "repeat_penalty", category="weights",
-        help="How much to penalize repetition when selecting tiles.",
-        prompt="Enter a new repetition penalty:",
-        metavar="FLOAT", default=DEFAULT_REPEAT_PENALTY, type=float,
+        'repeat_penalty', category='weights',
+        help='How much to penalize repetition when selecting tiles.',
+        prompt='Enter a new repetition penalty:',
+        metavar='FLOAT', default=DEFAULT_REPEAT_PENALTY, type=float,
     )
     ui.add_parameter(
-        "show", category="other",
-        help="If True, opens a preview of the output image upon completion.",
+        'show', category='other',
+        help='If True, opens a preview of the output image upon completion.',
         prompt="Enter True or False to enable/disable 'show':",
-        metavar="BOOL", default=False, type=bool,
+        metavar='BOOL', default=False, type=bool,
     )
     ui.add_parameter(
-        "subdivisions", category="subdivision",
-        help="Max number of subdivisions allowed in each main tile.",
-        prompt="Enter the new number of subdivisions:",
-        metavar="INT", default=DEFAULT_SUBDIVISIONS, type=int,
+        'subdivisions', category='subdivision',
+        help='Max number of subdivisions allowed in each main tile.',
+        prompt='Enter the new number of subdivisions:',
+        metavar='INT', default=DEFAULT_SUBDIVISIONS, type=int,
     )
     ui.add_parameter(
-        "subdivision_threshold", category="subdivision",
-        help="Detail values higher than this threshold will create a subdivision.",
-        prompt="Enter a new subdiv theshold:",
-        metavar="INT", default=DEFAULT_SUBDIVISION_THRESHOLD, type=int,
+        'subdivision_threshold', category='subdivision',
+        help='Detail values higher than this threshold will create a subdivision.',
+        prompt='Enter a new subdiv theshold:',
+        metavar='INT', default=DEFAULT_SUBDIVISION_THRESHOLD, type=int,
     )
     ui.add_parameter(
-        "detail_map", category="subdivision",
-        help="An image that controls where extra subdivisions are added.",
-        prompt="Enter the new number of subdivisions:",
-        metavar="PATH", allow_none=True, type=file_path,
+        'detail_map', category='subdivision',
+        help='An image that controls where extra subdivisions are added.',
+        prompt='Enter the new number of subdivisions:',
+        metavar='PATH', allow_none=True, type=file_path,
     )
 
     # define a function for handling options changes
@@ -434,11 +457,11 @@ def main():
                 return
             case _:
                 MOSAIC.config(**{modified_option:val})
-        
-        
+
 
     # define function for starting mosaic generation
-    def make_mosaic():
+    def make_mosaic() -> str:
+        """Make a mosaic using the Mosaic class."""
         USER_INPUT.verify_all_filled()
         MOSAIC.fit_tiles()
         output_path = USER_INPUT['output'].value
@@ -448,7 +471,7 @@ def main():
         return ctext(f'Saved as "{output_path}"', 'OKGREEN')
 
 
-    ui.add_action("Make_Mosaic", "Generate the output mosaic", make_mosaic)
+    ui.add_action('Make_Mosaic', 'Generate the output mosaic', make_mosaic)
 
     ui.get_static()
     MOSAIC = Mosaic(ui['tile_resolution'].value, ui['tile_folder'].value)
@@ -461,10 +484,11 @@ def main():
 
 
 def gen_output_path() -> str:
+    """Generate a default output filename."""
     output_name = 'mosaic'
     for param_name, symbol in [
         ('xy_tiles',''),
-        ('input_rescale', "S"),
+        ('input_rescale', 'S'),
         ('compare_scale', 'c'),
         ('linear_error_weight', 'l'),
         ('kernel_error_weight', 'k'),
@@ -487,10 +511,11 @@ def file_path(path:str) -> str:
     for quote in ("'", '"'):
         if path.startswith(quote) and path.endswith(quote):
             path = path.removeprefix(quote).removesuffix(quote)
-    
+
     if os.path.exists(path) and os.path.isfile(path):
         return path
-    raise ValueError(f"Couldn't find a file at '{path}'. Make sure this is a valid path to an image.")
+    msg = f"Couldn't find a file at '{path}'. Make sure this is a valid path to an image."
+    raise ValueError(msg)
 
 def folder_path(path:str) -> str:
     """Verify (and clean) a path to a folder"""
@@ -498,10 +523,11 @@ def folder_path(path:str) -> str:
     for quote in ("'", '"'):
         if path.startswith(quote) and path.endswith(quote):
             path = path.removeprefix(quote).removesuffix(quote)
-    
+
     if os.path.exists(path) and os.path.isdir(path):
         return path
-    raise ValueError(f"Couldn't find a folder at '{path}'. Make sure this is a valid path to a folder of images.")
+    msg = f"Couldn't find a folder at '{path}'. Make sure this is a valid path to a folder of images."
+    raise ValueError(msg)
 
 
 
@@ -509,13 +535,14 @@ def folder_path(path:str) -> str:
 # -----------------------------------------------------------------------------------------------------------------------------
 class Printer:
     """Simple helper for printing progress text."""
-    last_line_len = 0
-    max_line_len = 0
 
-    load_chars = ["⢿", "⣻", "⣽", "⣾", "⣷", "⣯", "⣟", "⡿"]
-    char_idx = 0
+    _last_line_len = 0
+    _max_line_len = 0
 
-    prntclrs = {
+    _load_chars = ["⢿", "⣻", "⣽", "⣾", "⣷", "⣯", "⣟", "⡿"]
+    _char_idx = 0
+
+    _prntclrs = {
         'GRAY':'\033[90m',
         'DARKBLUE':'\033[34m',
         'DARKMAGENTA':'\033[35m',
@@ -530,33 +557,34 @@ class Printer:
         'UNDERLINE':'\033[4m',
     }
 
-    def next_char(self):
+    def next_char(self) -> str:
         """Get the next loading character"""
-        self.char_idx = (self.char_idx + 1) % len(self.load_chars)
-        return self.load_chars[self.char_idx]
+        self._char_idx = (self._char_idx + 1) % len(self._load_chars)
+        return self._load_chars[self._char_idx]
 
     def _pad_text(self, text:str) -> str:
         newtext = \
-            f"{text}{' ' * (self.last_line_len - len(text))}" \
-            if len(text) < self.last_line_len \
+            f"{text}{' ' * (self._last_line_len - len(text))}" \
+            if len(text) < self._last_line_len \
             else text
-        self.last_line_len = len(text)
+        self._last_line_len = len(text)
         return newtext
 
     def update_text_len(self):
-        self.max_line_len = shutil.get_terminal_size().columns
+        """Update printer max text len (based on terminal size)"""
+        self._max_line_len = shutil.get_terminal_size().columns
 
     def _ensure_length(self, text:str) -> str:
         """Prevent text len from being too long."""
-        if len(text) > self.max_line_len:
-            return f"{text[:self.max_line_len-3]}..."
+        if len(text) > self._max_line_len:
+            return f"{text[:self._max_line_len-3]}..."
         return text
 
     @staticmethod
     def ctext(text:str, color:str) -> str:
         """Generate a colored string and return it."""
-        color = Printer.prntclrs.get(color.upper(), "ENDC")
-        return f"{color}{text}{Printer.prntclrs['ENDC']}"
+        color = Printer._prntclrs.get(color.upper(), "ENDC")
+        return f"{color}{text}{Printer._prntclrs['ENDC']}"
 
     def cprint(self, text:str, color:str):
         """Print in color (and pad lines to erase old text)"""
