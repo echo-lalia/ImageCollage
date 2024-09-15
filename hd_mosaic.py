@@ -407,7 +407,8 @@ def init_ui() -> UserInterface:
         'tile_load_resolution', category='tiles',
         help='The resolution to load the tiles in with.',
         prompt="""Please provide the resolution you would like to load the tiles in with:
-(Small resolutions might look bad, big resolutions might be very slow. 128x128 is an okay starting point.)""",
+(Small resolutions might look bad, big resolutions might be very slow. 128x128 is an okay starting point.)
+(Changing this value will require a re-load of the input tiles.)""",
         metavar='INT|INTxINT', type=InputScale,
         )
     ui.add_parameter(
@@ -425,7 +426,7 @@ def init_ui() -> UserInterface:
     ui.add_parameter(
         'output', category='input/output',
         help='The source image to base the mosaic on.',
-        prompt='Provide the path to an image to base this mosaic on:',
+        prompt='Provide the path/name of the output image:',
         metavar='PATH', allow_none=True,
         )
     ui.add_parameter(
@@ -449,7 +450,7 @@ def init_ui() -> UserInterface:
     ui.add_parameter(
         'kernel_error_weight', category='weights',
         help="How much the 'kernel difference' comparion affects the output.",
-        prompt='Enter a new linear weight:',
+        prompt='Enter a new kernel weight:',
         metavar='FLOAT', default=DEFAULT_KERNEL_WEIGHT, type=float,
     )
     ui.add_parameter(
@@ -491,7 +492,7 @@ def init_ui() -> UserInterface:
     ui.add_parameter(
         'detail_map', category='subdivision',
         help='An image that controls where extra subdivisions are added.',
-        prompt='Enter the new number of subdivisions:',
+        prompt='Enter the path to an image to use as a detail map:',
         metavar='PATH', allow_none=True, type=file_path,
     )
     return ui
