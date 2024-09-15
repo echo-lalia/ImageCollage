@@ -1,6 +1,23 @@
 """HD Mosaic
 
 A script that creates a photo mosaic by comparing sub-tile pixels for a higher quality result.
+
+
+Copyright (C) 2024  Ethan Lacasse
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 # ruff: noqa: PLW0603
 
@@ -49,8 +66,6 @@ USER_INPUT = None
 MOSAIC = None
 
 
-
-
 # |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~|
 # |             ___ ,  ,  __  .  . ___      __    _    __    _   ,   ,  __ ___  __  __             |
 # |              |  |\ | |__) |  |  |      |__)  /_\  |__)  /_\  |\_/| |_   |  |_  |__)            |
@@ -65,15 +80,15 @@ class InputParameter:
 
     def __init__(
             self,
-            name:str,
+            name: str,
             *,
-            help:str='',
-            type:callable=str,
-            prompt:str|None=None,
-            metavar:str|None=None,
+            help: str = '',
+            type: callable = str,
+            prompt: str|None = None,
+            metavar: str|None = None,
             default=None,
-            static:bool=False,
-            allow_none:bool=False):
+            static: bool = False,
+            allow_none: bool = False):
         """Create an InputParameter object for handling `input` options."""
         self.name = name
         self.help = help
@@ -83,8 +98,7 @@ class InputParameter:
         self.default = default if default is None else type(default)
         self.value = default if default is None else type(default)
         self.static = static
-        self.allow_none=allow_none
-
+        self.allow_none = allow_none
 
     def set_val(self, val):
         """Assign a value to this parameter"""
@@ -93,9 +107,8 @@ class InputParameter:
         else:
             self.value = self.type(val)
 
-
-    def prompt_string(self, add_in:str|None=None) -> str:
-        """Create a printable string prompting the user to provide a new value."""
+    def prompt_string(self, add_in: str|None = None) -> str:
+        """Get a printable string prompting the user to provide a new value."""
         string = f"\n\n{ctext(ctext(self.name, 'HEADER'), 'BOLD')} : {ctext(self.metavar, 'GRAY')}"
         if self.value is not None:
             string += f" = {ctext(str(self.value), 'GRAY')}"
@@ -125,14 +138,13 @@ class InputAction:
 
     def __init__(
             self,
-            name:str,
-            description:str,
-            callback:callable):
+            name: str,
+            description: str,
+            callback: callable):
         """Create a new InputAction with given name, description, and callback."""
         self.name = name
         self.description = description
         self.callback = callback
-
 
 
 # |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~|
@@ -147,7 +159,7 @@ class InputAction:
 class UserInput:
     """Gets input variables from the user, creating a simple menu."""
 
-    def __init__(self, name:str):
+    def __init__(self, name: str):
         """Create an object for managing a simple CLI menu."""
         self.name = name
         self.categories = {}
@@ -155,21 +167,18 @@ class UserInput:
         self.actions = {}
         self.option_callback = None
 
-
     def __getitem__(self, key):
         return self.params[key]
 
-
-    def _clear_screen(self):
+    @staticmethod
+    def _clear_screen():
         size = shutil.get_terminal_size()
         for _ in range(size.lines):
             print()
 
-
-    def add_category(self, category:str, description:str):
+    def add_category(self, category: str, description: str):
         """Add a new submenu named "category", which organizes some parameters."""
-        self.categories[category] = {'desc':description, 'params':[]}
-
+        self.categories[category] = {'desc': description, 'params': []}
 
     def add_parameter(
             self,
@@ -181,7 +190,6 @@ class UserInput:
         self.categories[category]['params'].append(name)
         self.params[name] = param
 
-
     def add_action(
             self,
             name,
@@ -190,8 +198,7 @@ class UserInput:
         """Add a new action to the menu."""
         self.actions[name] = InputAction(name, desc, callback)
 
-
-    def get_param(self, name:str, prev_message:str='') -> str:
+    def get_param(self, name: str, prev_message: str = '') -> str:
         """Prompt the user to get a new value for parameter."""
         param = self[name]
 
@@ -215,7 +222,6 @@ class UserInput:
             except (ValueError) as e:
                 add_in = ctext(getattr(e, 'message', str(e)), 'WARNING')
 
-
     def get_static(self):
         """Prompt the user to fill all static parameters"""
         prev_message = ''
@@ -225,17 +231,15 @@ class UserInput:
         if prev_message:
             print(prev_message)
 
-
     @staticmethod
-    def pre_process_input(inpt:str) -> str:
+    def pre_process_input(inpt: str) -> str:
         """Clean input, and also handle exit command"""
         inpt = inpt.strip()
         if inpt == 'exit':
             sys.exit()
         return inpt
 
-
-    def _print_main_menu(self, ex_txt:str|None=None):
+    def _print_main_menu(self, ex_txt: str|None = None):
         # print the menu options
         self._clear_screen()
 
@@ -259,8 +263,7 @@ class UserInput:
             print('\n')
         cprint('Select an action or option category:', 'GRAY')
 
-
-    def _print_category_menu(self, category:str, ex_txt:str|None=None):
+    def _print_category_menu(self, category: str, ex_txt: str|None = None):
         # print the menu options
         self._clear_screen()
 
@@ -286,7 +289,6 @@ class UserInput:
             print('\n')
         cprint('Select an option:', 'GRAY')
 
-
     def category_menu(self, category, ex_txt=None):
         """Show the menu for this category"""
         # ex txt holds feedback info to display above the menu
@@ -296,7 +298,7 @@ class UserInput:
             self._print_category_menu(category, ex_txt=ex_txt)
             choice = self.pre_process_input(input())
             choice = self.filter_choice(choice, params)
-            if choice in ('back', '..', '-'):
+            if choice in {'back', '..', '-'}:
                 return
             if choice in params:
                 ex_txt = self.get_param(choice)
@@ -306,8 +308,7 @@ class UserInput:
             else:
                 ex_txt = ctext(f"'{choice}' isn't a valid choice.", 'WARNING')
 
-
-    def main_menu(self, ex_txt:str|None=None):
+    def main_menu(self, ex_txt: str|None = None):
         """Show the main menu"""
         actions = list(self.actions.keys())
         categories = list(self.categories.keys())
@@ -324,8 +325,8 @@ class UserInput:
             else:
                 ex_txt = ctext(f"'{choice}' isn't a valid choice.", 'WARNING')
 
-
-    def filter_choice(self, choice:str, options:list) -> str:
+    @staticmethod
+    def filter_choice(choice: str, options: list) -> str:
         """Try fitting choice to option, so user input doesn't need to be so specific."""
         if choice in options:
             return choice
@@ -337,7 +338,6 @@ class UserInput:
         if len(options) == 1:
             return options[0]
         return choice
-
 
     def verify_all_filled(self):
         """Force all values to be filled (except for those that are allowed to be None)"""
@@ -355,10 +355,9 @@ class UserInput:
 # |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ MAIN ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~|
 # |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~|
 
-def main():
-    """Run the main script."""
-    global VERBOSE, USER_INPUT, MOSAIC
-
+def init_parser():
+    """Get argparse arguments."""
+    global VERBOSE
     # argparser for verbose and help messages
     parser = argparse.ArgumentParser(
         description=ctext(
@@ -371,8 +370,16 @@ def main():
     args = parser.parse_args()
     VERBOSE = args.verbose
 
+
+def init_ui() -> UserInput:
+    """Create and initialize the UserInput object
+
+    Returns:
+        UserInput
+    """
+
     # interactive input stuff:
-    USER_INPUT = ui = UserInput('hd_mosaic')
+    ui = UserInput('hd_mosaic')
 
     ui.add_category('input/output', 'Options for the input/output images')
     ui.add_category('tiles', 'Options relating to the tiles')
@@ -380,7 +387,6 @@ def main():
     ui.add_category('overlay', 'Options relating to the image overlay')
     ui.add_category('subdivision', 'Options relating to the tile subdivision')
     ui.add_category('other', 'Uncategorized options')
-
 
     ui.add_parameter(
         'tile_folder', category='tiles',
@@ -479,59 +485,71 @@ def main():
         prompt='Enter the new number of subdivisions:',
         metavar='PATH', allow_none=True, type=file_path,
     )
-
-    # define a function for handling options changes
-    def load_options(modified_option):
-        global SHOW_PREVIEW
-        val = USER_INPUT[modified_option].value
-
-        match modified_option:
-            case 'source_image':
-                MOSAIC.config(source_image_path=val)
-            case 'xy_tiles':
-                MOSAIC.config(output_tiles_res=val)
-            case 'input_rescale':
-                MOSAIC.config(source_image_rescale=val)
-            case 'compare_scale':
-                MOSAIC.config(compare_size=val)
-            case 'overlay_opacity':
-                MOSAIC.config(overlay_alpha=val)
-            case 'subtle_overlay':
-                MOSAIC.config(subtle_overlay_alpha=val)
-            case 'detail_map':
-                MOSAIC.config(detail_map_path=val)
-            case 'show':
-                SHOW_PREVIEW = val
-            case 'tile_folder'|'tile_resolution'|'output':
-                # avoid any keys not used by MOSAIC
-                return
-            case _:
-                MOSAIC.config(**{modified_option:val})
+    return ui
 
 
-    # define function for starting mosaic generation
-    def make_mosaic() -> str:
-        """Make a mosaic using the Mosaic class."""
-        USER_INPUT.verify_all_filled()
-        MOSAIC.fit_tiles()
-        output_path = USER_INPUT['output'].value
-        if output_path is None:
-            output_path = gen_output_path()
-        MOSAIC.save(output_path=output_path, show_preview=SHOW_PREVIEW)
-        return ctext(f'Saved as "{output_path}"', 'OKGREEN')
+def load_options_into_mosaic(modified_option):
+    """Load given option from USER_INPUT into MOSAIC"""
+    global SHOW_PREVIEW
+    val = USER_INPUT[modified_option].value
+
+    match modified_option:
+        case 'source_image':
+            MOSAIC.config(source_image_path=val)
+        case 'xy_tiles':
+            MOSAIC.config(output_tiles_res=val)
+        case 'input_rescale':
+            MOSAIC.config(source_image_rescale=val)
+        case 'compare_scale':
+            MOSAIC.config(compare_size=val)
+        case 'overlay_opacity':
+            MOSAIC.config(overlay_alpha=val)
+        case 'subtle_overlay':
+            MOSAIC.config(subtle_overlay_alpha=val)
+        case 'detail_map':
+            MOSAIC.config(detail_map_path=val)
+        case 'show':
+            SHOW_PREVIEW = val
+        case 'tile_folder'|'tile_resolution'|'output':
+            # avoid any keys not used by MOSAIC
+            return
+        case _:
+            MOSAIC.config(**{modified_option: val})
 
 
+def make_mosaic() -> str:
+    """Make a mosaic using the Mosaic class."""
+    USER_INPUT.verify_all_filled()
+    MOSAIC.fit_tiles()
+    output_path = USER_INPUT['output'].value
+    if output_path is None:
+        output_path = gen_output_path()
+    MOSAIC.save(output_path=output_path, show_preview=SHOW_PREVIEW)
+    return ctext(f'Saved as "{output_path}"', 'OKGREEN')
+
+
+def main():
+    """Run the main script."""
+    global USER_INPUT, MOSAIC
+
+    # setup parser and ui
+    init_parser()
+    ui = USER_INPUT = init_ui()
+
+    # add mosaic action to ui
     ui.add_action('Make_Mosaic', 'Generate the output mosaic', make_mosaic)
 
+    # get static params, use those to configure a new Mosaic
     ui.get_static()
     MOSAIC = Mosaic(ui['tile_resolution'].value, ui['tile_folder'].value)
-    ui.option_callback = load_options
+    # add callback after creating mosaic (callback requires mosaic to exist)
+    ui.option_callback = load_options_into_mosaic
     # load all default vals
     for name, param in ui.params.items():
         if param.value is not None:
-            load_options(name)
+            load_options_into_mosaic(name)
+    # start the main menu of the program
     ui.main_menu()
-
 
 
 # |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~|
@@ -547,7 +565,7 @@ def gen_output_path() -> str:
     """Generate a default output filename."""
     output_name = 'mosaic'
     for param_name, symbol in [
-        ('xy_tiles',''),
+        ('xy_tiles', ''),
         ('input_rescale', 'S'),
         ('compare_scale', 'c'),
         ('linear_error_weight', 'l'),
@@ -565,8 +583,12 @@ def gen_output_path() -> str:
     return output_name
 
 
-def file_path(path:str) -> str:
-    """Verify (and clean) a path to an image"""
+def file_path(path: str) -> str:
+    """Verify (and clean) a path to an image
+
+    Raises:
+        ValueError: When path is not valid
+    """
     # remove filepath quotes
     for quote in ("'", '"'):
         if path.startswith(quote) and path.endswith(quote):
@@ -577,8 +599,13 @@ def file_path(path:str) -> str:
     msg = f"Couldn't find a file at '{path}'. Make sure this is a valid path to an image."
     raise ValueError(msg)
 
-def folder_path(path:str) -> str:
-    """Verify (and clean) a path to a folder"""
+
+def folder_path(path: str) -> str:
+    """Verify (and clean) a path to a folder
+
+    Raises:
+        ValueError: when path isn't correct.
+    """
     # remove filepath quotes
     for quote in ("'", '"'):
         if path.startswith(quote) and path.endswith(quote):
@@ -605,7 +632,6 @@ def crop_from_rescale(old_size, new_size) -> tuple[int, int, int, int]:
     )
 
 
-
 # |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~|
 # |                                  __   __  ___ ,  , ___  __  __                                 |
 # |                                 |__) |__)  |  |\ |  |  |_  |__)                                |
@@ -625,18 +651,18 @@ class Printer:
     _char_idx = 0
 
     _prntclrs = {
-        'GRAY':'\033[90m',
-        'DARKBLUE':'\033[34m',
-        'DARKMAGENTA':'\033[35m',
-        'HEADER':'\033[95m',
-        'OKBLUE':'\033[94m',
-        'OKCYAN':'\033[96m',
-        'OKGREEN':'\033[92m',
-        'WARNING':'\033[93m',
-        'FAIL':'\033[91m',
-        'ENDC':'\033[0m',
-        'BOLD':'\033[1m',
-        'UNDERLINE':'\033[4m',
+        'GRAY': '\033[90m',
+        'DARKBLUE': '\033[34m',
+        'DARKMAGENTA': '\033[35m',
+        'HEADER': '\033[95m',
+        'OKBLUE': '\033[94m',
+        'OKCYAN': '\033[96m',
+        'OKGREEN': '\033[92m',
+        'WARNING': '\033[93m',
+        'FAIL': '\033[91m',
+        'ENDC': '\033[0m',
+        'BOLD': '\033[1m',
+        'UNDERLINE': '\033[4m',
     }
 
     def next_char(self) -> str:
@@ -644,7 +670,7 @@ class Printer:
         self._char_idx = (self._char_idx + 1) % len(self._load_chars)
         return self._load_chars[self._char_idx]
 
-    def _pad_text(self, text:str) -> str:
+    def _pad_text(self, text: str) -> str:
         newtext = \
             f"{text}{' ' * (self._last_line_len - len(text))}" \
             if len(text) < self._last_line_len \
@@ -656,19 +682,19 @@ class Printer:
         """Update printer max text len (based on terminal size)"""
         self._max_line_len = shutil.get_terminal_size().columns
 
-    def _ensure_length(self, text:str) -> str:
+    def _ensure_length(self, text: str) -> str:
         """Prevent text len from being too long."""
         if len(text) > self._max_line_len:
-            return f'{text[:self._max_line_len-3]}...'
+            return f'{text[:self._max_line_len - 3]}...'
         return text
 
-    @staticmethod
-    def ctext(text:str, color:str) -> str:
+    @classmethod
+    def ctext(cls, text: str, color: str) -> str:
         """Generate a colored string and return it."""
-        color = Printer._prntclrs.get(color.upper(), 'ENDC')
-        return f"{color}{text}{Printer._prntclrs['ENDC']}"
+        color = cls._prntclrs.get(color.upper(), 'ENDC')
+        return f"{color}{text}{cls._prntclrs['ENDC']}"
 
-    def cprint(self, text:str, color:str):
+    def cprint(self, text: str, color: str):
         """Print in color (and pad lines to erase old text)"""
         text = self._pad_text(str(text))
         print(self.ctext(text, color))
@@ -679,6 +705,7 @@ class Printer:
         text = self._ensure_length(self._pad_text(text))
         print(self.ctext(text, 'OKCYAN'), end='\r')
 
+
 # printer is the main way this script prints information.
 # so we'll simplify its method calls for readability:
 Printer = Printer()
@@ -686,7 +713,6 @@ Printer.update_text_len()
 cprint = Printer.cprint
 ctext = Printer.ctext
 cwrite = Printer.write_progress
-
 
 
 # |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~|
@@ -701,7 +727,7 @@ cwrite = Printer.write_progress
 class DebugTimer:
     """Simple helper for timing various operations"""
 
-    def __init__(self, text:str):
+    def __init__(self, text: str):
         """Create a DebugTimer that times a task named `text`"""
         self.text = text
         self.start_time = time.time()
@@ -709,10 +735,9 @@ class DebugTimer:
     def print(self):
         """Print the result of the timer"""
         cprint(
-            f'{self.text}: {time.time()-self.start_time:.2f}s',
+            f'{self.text}: {time.time() - self.start_time:.2f}s',
             'UNDERLINE',
         )
-
 
 
 # |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~|
@@ -727,13 +752,10 @@ class DebugTimer:
 class Scale:
     """A simple helper for bundling width/height information"""
 
-    def __init__(self, width:int, height:int):
+    def __init__(self, width: int, height: int):
         """Create a Scale with given width and height"""
         self.w = width
         self.h = height
-
-    def __tuple__(self):
-        return (self.w, self.h)
 
     def __iter__(self):
         yield from (self.w, self.h)
@@ -748,6 +770,9 @@ class Scale:
             return tuple(self) == tuple(other)
         return NotImplemented
 
+    def __hash__(self):
+        return hash(tuple(self))
+
     def __getitem__(self, idx):
         if idx == 0:
             return self.w
@@ -760,8 +785,12 @@ class Scale:
 class InputScale(Scale):
     """Convert an input string into a Scale"""
 
-    def __init__(self, intext:str):
-        """Create a Scale from an input str"""
+    def __init__(self, intext: str):
+        """Create a Scale from an input str
+
+        Raises:
+            ValueError: When string can't be understood as a height/width
+        """
         text = intext.lower().replace(',', 'x').replace('.', 'x')
         try:
             if 'x' in text:
@@ -776,7 +805,6 @@ class InputScale(Scale):
             msg = f'{width}x{height} is too small. Values smaller than 1 are impossible.'
             raise ValueError(msg)
         super().__init__(width, height)
-
 
 
 # |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~|
@@ -816,19 +844,18 @@ class InputTile:
             self.img.height - (h_delta // 2),
         )
 
-         # ONLY resize when the new size is smaller than the og size
+        # ONLY resize when the new size is smaller than the og size
         if tile_size.w <= self.img.width and tile_size.h <= self.img.height:
             # crop and resize image to tile size
             self.img = self.img.resize(tile_size, box=crop)
         else:
             self.img = self.img.crop(crop)
 
-        self.img =  self.img.convert(mode='RGB')
+        self.img = self.img.convert(mode='RGB')
 
         self.linear_array = None
         self.kernel_diff_array = None
-        self.repeat_error= 0.0
-
+        self.repeat_error = 0.0
 
     def setup_compare_arrays(self):
         """Create numpy arrays for comparing image similarity"""
@@ -836,22 +863,22 @@ class InputTile:
         self.linear_array = self._as_linear_array(compare_img)
         self.kernel_diff_array = self._as_kernel_diff_array(compare_img)
 
-
     def get_image(self, resize=None) -> Image.Image:
         """Get the resized tile, and track usage."""
         self.repeat_error += InputTile.repeat_penalty
         return self.img.resize(resize) if resize else self.img
 
-
     def compare(self, source) -> float:
         """Get total error score for this tile"""
         err = self.repeat_error
         err += (np.mean(np.abs(source.linear_array - self.linear_array)) / 255) * InputTile.linear_error_weight
-        err += (np.mean(np.abs(source.kernel_diff_array - self.kernel_diff_array)) / 255) * InputTile.kernel_error_weight
+        err += (
+            np.mean(np.abs(source.kernel_diff_array - self.kernel_diff_array)) / 255
+            ) * InputTile.kernel_error_weight
         return err
 
-
-    def _as_kernel_diff_array(self, img) -> np.array:
+    @staticmethod
+    def _as_kernel_diff_array(img) -> np.array:
         """For each pixel, avg val with neighbors to determine pixel kernel.
 
         return array representing the differences between the pixels and the pixel kernels.
@@ -870,19 +897,19 @@ class InputTile:
                             avg_val += img.getpixel((dx, dy))[0] / 9
 
                 # compare to real val
-                arr = np.append(arr, abs(img.getpixel((x,y))[0] - avg_val))
+                arr = np.append(arr, abs(img.getpixel((x, y))[0] - avg_val))
         return arr
 
-
-    def _as_linear_array(self, img) -> np.array:
+    @staticmethod
+    def _as_linear_array(img) -> np.array:
         """Convert Image to an array for comparison"""
         # convert to Lab color space for more accurate comparisons
         return np.array(
-            [img.getpixel((x,y)) for y in range(img.height) for x in range(img.width)]
+            [img.getpixel((x, y)) for y in range(img.height) for x in range(img.width)],
             )
 
-
-    def _crop_from_ratio(self, width_height, ratio) -> Scale:
+    @staticmethod
+    def _crop_from_ratio(width_height, ratio) -> Scale:
         """Return the cropped width/height to match the given ratio"""
         w, h = width_height
         rw, rh = ratio
@@ -899,7 +926,6 @@ class InputTile:
             h *= width_factor
 
         return Scale(int(w), int(h))
-
 
 
 # |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~|
@@ -953,8 +979,6 @@ class Mosaic:
         if VERBOSE:
             timer.print()
 
-
-
     def make_all_compare_arrays(self):
         """Create 'compare' arrays for each tile in Mosaic"""
         Mosaic.arrays_made = True
@@ -963,69 +987,60 @@ class Mosaic:
             tile.setup_compare_arrays()
             cwrite(f'Making compare array {idx}/{num_tiles}')
 
+    def config(self, **kwargs):
+        """Update configuraiton for Mosaic
 
-    def config(
-            self,
-            source_image_path=None,
-            source_image_rescale=None,
-            compare_size=None,
-            output_tiles_res=None,
-            subdivisions=None,
-            subdivision_threshold=None,
-            detail_map_path=None,
-            linear_error_weight=None,
-            kernel_error_weight=None,
-            repeat_penalty=None,
-            overlay_alpha=None,
-            subtle_overlay_alpha=None):
-        """Update configuraiton for Mosaic"""
-        if source_image_path:
-            self.source_image_path = source_image_path
-        if source_image_rescale:
-            self.source_image_rescale = source_image_rescale
-        if compare_size:
-            InputTile.compare_size = compare_size
+        kwargs:
+            source_image_path
+            source_image_rescale
+            compare_size
+            output_tiles_res
+            subdivisions
+            subdivision_threshold
+            detail_map_path
+            linear_error_weight
+            kernel_error_weight
+            repeat_penalty
+            overlay_alpha
+            subtle_overlay_alpha
+
+        Raises:
+            ValueError: When a given keyword is not an extant attribute of Mosaic
+        """
+        for key, val in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, val)
+            else:
+                msg = f'"{key}" is not an attribute of {self}'
+                raise ValueError(msg)
+        if 'compare_size' in kwargs:
+            InputTile.compare_size = kwargs['compare_size']
+            # only regen arrays immediately if they have already been generated
             if self.arrays_made:
-                # only regen arrays immediately if they have already been generated
                 self.make_all_compare_arrays()
-        if output_tiles_res:
-            self.output_tiles_res = output_tiles_res
-        if subdivisions is not None:
-            self.subdivisions = subdivisions
-        if subdivision_threshold is not None:
-            self.subdivision_threshold = subdivision_threshold
-        if linear_error_weight is not None:
-            self.linear_error_weight = linear_error_weight
-        if kernel_error_weight is not None:
-            self.kernel_error_weight = kernel_error_weight
-        if repeat_penalty is not None:
-            self.repeat_penalty = repeat_penalty
-        if overlay_alpha is not None:
-            self.overlay_alpha = overlay_alpha
-        if subtle_overlay_alpha is not None:
-            self.subtle_overlay_alpha = subtle_overlay_alpha
-        if detail_map_path:
-            self.detail_map_path = detail_map_path
 
-
-        if (source_image_path
-        or source_image_rescale
-        or output_tiles_res
-        or subdivisions
-        or detail_map_path) \
-        and (self.source_image_path is not None
-        and self.output_tiles_res is not None):
+        # have our settings changed in a way that require us to redo some setup?
+        input_output_changed = (
+            'source_image_path' in kwargs
+            or 'source_image_rescale' in kwargs
+            or 'output_tiles_res' in kwargs
+            or 'subdivisions' in kwargs
+            or 'detail_map_path' in kwargs
+            )
+        # do we have enough information to do setup?
+        can_setup_source = (
+            self.source_image_path is not None
+            and self.output_tiles_res is not None
+        )
+        if input_output_changed and can_setup_source:
             self._setup_source()
-
             # create the blank image to create our mosaic
             self.mosaic = Image.new(mode='RGB', size=tuple(self.output_size))
-
+            # create a default, or setup the provided, detail map
             if self.detail_map_path is None:
                 self.detail_map = self._make_detail_map()
             else:
                 self.detail_map = self._setup_detail_map()
-
-
 
     def _setup_source(self):
         """Load input image and setup adjusted image scales"""
@@ -1068,11 +1083,10 @@ class Mosaic:
             )
         cprint(
             f'With {subdivisions} subdivision steps, '
-            f'up to {horizontal_tiles*sub_width}x{vertical_tiles*sub_width} total sub-tiles.',
+            f'up to {horizontal_tiles * sub_width}x{vertical_tiles * sub_width} total sub-tiles.',
             'HEADER',
             )
         cprint(f'Output image size: {self.source_image.width}x{self.source_image.height}', 'HEADER')
-
 
     def _make_detail_map(self) -> Image.Image:
         """Create a default detail map from the source image.
@@ -1103,7 +1117,6 @@ class Mosaic:
                 ),
             ).enhance(2)
 
-
     def _setup_detail_map(self) -> Image.Image:
         """Convert the given detail map into the expected format"""
         detail_map = Image.open(self.detail_map_path)
@@ -1113,7 +1126,6 @@ class Mosaic:
         return detail_map\
             .resize((map_width, map_height))\
             .convert(mode='L')
-
 
     def load_tiles(self, tile_directory) -> list[InputTile, ...]:
         """Open, crop, and rescale tiles from tile directory"""
@@ -1130,7 +1142,6 @@ class Mosaic:
                 cprint(f'Warning: {img_file.name} could not be loaded', 'WARNING')
         cprint(f'{num_image_tiles - bad_tile_files} tiles loaded.', 'OKGREEN')
         return tiles
-
 
     def find_tile(self, tile_x, tile_y, width, height, sub=0) -> Image.Image:
         """Find the tile for a single x/y coordinate"""
@@ -1163,9 +1174,9 @@ class Mosaic:
                     )
                     img.paste(
                         self.find_tile(
-                            tile_x*2 + sub_x, tile_y*2 + sub_y,
+                            tile_x * 2 + sub_x, tile_y * 2 + sub_y,
                             sub_width, sub_height,
-                            sub=sub+1,
+                            sub=sub + 1,
                         ),
                         box=sub_crop,
                     )
@@ -1197,7 +1208,6 @@ class Mosaic:
         best_idx = final_errors.index(min(final_errors))
         best_tile = self.tiles[best_idx]
         return self.add_subtle_overlay(best_tile.get_image(resize=(width, height)), source_region.img)
-
 
     def fit_tiles(self):
         """Fit all tiles in the Mosaic
@@ -1239,7 +1249,6 @@ class Mosaic:
                     box=crop,
                 )
 
-
         cprint(f'{total_tiles} tiles selected.', 'OKGREEN')
 
         if self.overlay_alpha:
@@ -1249,12 +1258,10 @@ class Mosaic:
         if VERBOSE:
             cprint(f'Smallest error: {self.min_error}, largest error: {self.max_error}', color='UNDERLINE')
 
-
     def add_normal_overlay(self) -> Image.Image:
         """Overlay the source image over the whole mosaic"""
         overlay_img = ImageChops.overlay(self.mosaic, self.source_image)
         return ImageChops.blend(self.mosaic, overlay_img, self.overlay_alpha)
-
 
     def add_subtle_overlay(self, tile, source_tile) -> Image.Image:
         """Add one section of subtle overlay to a tile."""
@@ -1269,7 +1276,6 @@ class Mosaic:
             self.subtle_overlay_alpha,
             )
 
-
     def save(self, show_preview, output_path):
         """Save (and/or show) the generated mosaic"""
         if show_preview:
@@ -1279,7 +1285,6 @@ class Mosaic:
         cprint('Saving img...', 'OKBLUE')
         self.mosaic.save(output_path)
         cprint(f'Saved as "{output_path}"', 'OKGREEN')
-
 
 
 if __name__ == '__main__':
