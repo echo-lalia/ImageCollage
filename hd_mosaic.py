@@ -497,6 +497,21 @@ def init_ui() -> UserInterface:
     return ui
 
 
+def set_cwd():
+    """Fix issue where CWD might be in System32
+
+    If you run the script by double clicking the file in windows,
+    the CWD might be in System32 instead of in the folder where the script is located.
+    To fix this, we can just check if this is the CWD on startup and set it to the script location.
+    """
+    if 'system32' in os.getcwd().lower():
+        try:
+            os.chdir(os.path.split(__file__)[0])
+        except (NameError, OSError) as e:
+            if VERBOSE:
+                print(e)
+
+
 # :------------------------------------------------------------------------------------------------:
 # :                            __    _            __    _    __       __                           :
 # :                           /  `  /_\  |   |   |__)  /_\  /  ` |_/ (__`                          :
@@ -641,6 +656,7 @@ def main():
     global USER_INPUT, MOSAIC
 
     # setup parser and ui
+    set_cwd()
     init_parser()
     ui = USER_INPUT = init_ui()
 
