@@ -173,8 +173,7 @@ class UserInput:
     @staticmethod
     def _clear_screen():
         size = shutil.get_terminal_size()
-        for _ in range(size.lines):
-            print()
+        print('\n' * size.lines)
 
     def add_category(self, category: str, description: str):
         """Add a new submenu named "category", which organizes some parameters."""
@@ -378,7 +377,6 @@ def init_ui() -> UserInput:
         UserInput
     """
 
-    # interactive input stuff:
     ui = UserInput('hd_mosaic')
 
     ui.add_category('input/output', 'Options for the input/output images')
@@ -392,14 +390,14 @@ def init_ui() -> UserInput:
         'tile_folder', category='tiles',
         help='The source folder containing all the image tiles.',
         prompt='Please provide the path to a folder of images to use as tiles:',
-        metavar='PATH', type=folder_path, static=True,
+        metavar='PATH', type=folder_path,
         )
     ui.add_parameter(
-        'tile_resolution', category='tiles',
+        'tile_load_resolution', category='tiles',
         help='The resolution to load the tiles in with.',
         prompt="""Please provide the resolution you would like to load the tiles in with:
-(Small resolutions might look bad, big resolutions might be very slow. A sensible starting point might be 128x128)""",
-        metavar='INT|INTxINT', type=InputScale, static=True,
+(Small resolutions might look bad, big resolutions might be very slow. 128x128 is an okay starting point.)""",
+        metavar='INT|INTxINT', type=InputScale,
         )
     ui.add_parameter(
         'xy_tiles', category='tiles',
@@ -510,7 +508,9 @@ def load_options_into_mosaic(modified_option):
             MOSAIC.config(detail_map_path=val)
         case 'show':
             SHOW_PREVIEW = val
-        case 'tile_folder'|'tile_resolution'|'output':
+        case 'tile_folder':
+            MOSAIC.config(tile_load_dir=val)
+        case 'output':
             # avoid any keys not used by MOSAIC
             return
         case _:
@@ -540,9 +540,7 @@ def main():
     ui.add_action('Make_Mosaic', 'Generate the output mosaic', make_mosaic)
 
     # get static params, use those to configure a new Mosaic
-    ui.get_static()
-    MOSAIC = Mosaic(ui['tile_resolution'].value, ui['tile_folder'].value)
-    # add callback after creating mosaic (callback requires mosaic to exist)
+    MOSAIC = Mosaic()
     ui.option_callback = load_options_into_mosaic
     # load all default vals
     for name, param in ui.params.items():
@@ -766,7 +764,7 @@ class Scale:
     def __eq__(self, other):
         if isinstance(other, str):
             return f'{self.w}x{self.h}' == other.lower()
-        if isinstance(other, tuple) or hasattr(other, '__tuple__'):
+        if isinstance(other, tuple) or hasattr(other, '__iter__'):
             return tuple(self) == tuple(other)
         return NotImplemented
 
@@ -940,19 +938,17 @@ class InputTile:
 class Mosaic:
     """A class to hold and work on the mosaic tiles."""
 
-    tile_load_size = None
+    tile_load_resolution = None
     arrays_made = False
 
     # debug stuff
     min_error = 100.0
     max_error = 0.0
 
-    def __init__(
-            self,
-            tile_load_size,
-            tile_directory):
+    def __init__(self):
         """Create a Mosaic, loading images from given directory using given size."""
-        self.tile_load_size = tile_load_size
+        self.tile_load_resolution = None
+        self.tile_load_dir = None
         self.tile_size = None
         self.source_image = None
         self.source_image_path = None
@@ -970,11 +966,30 @@ class Mosaic:
         self.auto_detail_map = True
         self.subdivisions = None
         self.subdivision_threshold = None
+        self.tiles = None
 
+    def load_tiles(self):
+        """Open, crop, and rescale tiles from tile directory"""
         if VERBOSE:
             timer = DebugTimer('Load Tiles')
 
-        self.tiles = self.load_tiles(tile_directory)
+        # remember that these tiles haven't had arrays made yet
+        Mosaic.arrays_made = False
+
+        self.tiles = tiles = []
+        bad_tile_files = 0
+        num_image_tiles = len(os.listdir(self.tile_load_dir))
+
+        for tile_idx, img_file in enumerate(os.scandir(self.tile_load_dir)):
+            cwrite(f'Loading tile {tile_idx}/{num_image_tiles} ({img_file.name})')
+            # PIL will determine what images are or are not valid.
+            try:
+                tiles.append(InputTile(img_file, self.tile_load_resolution))
+            except (OSError, ValueError):
+                bad_tile_files += 1
+                cprint(f'Warning: {img_file.name} could not be loaded', 'WARNING')
+
+        cprint(f'{num_image_tiles - bad_tile_files} tiles loaded.', 'OKGREEN')
 
         if VERBOSE:
             timer.print()
@@ -1003,6 +1018,8 @@ class Mosaic:
             repeat_penalty
             overlay_alpha
             subtle_overlay_alpha
+            tile_load_dir
+            tile_load_resolution
 
         Raises:
             ValueError: When a given keyword is not an extant attribute of Mosaic
@@ -1019,9 +1036,16 @@ class Mosaic:
             if self.arrays_made:
                 self.make_all_compare_arrays()
 
+        # can we load in the input tiles with the settings we have?
+        tile_input_changed = ('tile_load_resolution' in kwargs) or ('tile_load_dir' in kwargs)
+        can_load_tiles = (self.tile_load_resolution is not None) and (self.tile_load_dir is not None)
+        if tile_input_changed and can_load_tiles:
+            self.load_tiles()
+
         # have our settings changed in a way that require us to redo some setup?
         input_output_changed = (
-            'source_image_path' in kwargs
+            tile_input_changed
+            or 'source_image_path' in kwargs
             or 'source_image_rescale' in kwargs
             or 'output_tiles_res' in kwargs
             or 'subdivisions' in kwargs
@@ -1029,7 +1053,8 @@ class Mosaic:
             )
         # do we have enough information to do setup?
         can_setup_source = (
-            self.source_image_path is not None
+            can_load_tiles
+            and self.source_image_path is not None
             and self.output_tiles_res is not None
         )
         if input_output_changed and can_setup_source:
@@ -1126,22 +1151,6 @@ class Mosaic:
         return detail_map\
             .resize((map_width, map_height))\
             .convert(mode='L')
-
-    def load_tiles(self, tile_directory) -> list[InputTile, ...]:
-        """Open, crop, and rescale tiles from tile directory"""
-        tiles = []
-        bad_tile_files = 0
-        num_image_tiles = len(os.listdir(tile_directory))
-        for tile_idx, img_file in enumerate(os.scandir(tile_directory)):
-            cwrite(f'Loading tile {tile_idx}/{num_image_tiles} ({img_file.name})')
-            # PIL will determine what images are or are not valid.
-            try:
-                tiles.append(InputTile(img_file, self.tile_load_size))
-            except (OSError, ValueError):
-                bad_tile_files += 1
-                cprint(f'Warning: {img_file.name} could not be loaded', 'WARNING')
-        cprint(f'{num_image_tiles - bad_tile_files} tiles loaded.', 'OKGREEN')
-        return tiles
 
     def find_tile(self, tile_x, tile_y, width, height, sub=0) -> Image.Image:
         """Find the tile for a single x/y coordinate"""
